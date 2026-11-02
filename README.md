@@ -1,224 +1,376 @@
 <div align="center">
 
-# 💸 PaidSure
+<img src="https://capsule-render.vercel.app/api?type=waving&color=gradient&customColorList=6,14,20&height=190&section=header&text=PaidSure&fontSize=72&fontColor=ffffff&animation=twinkling&fontAlignY=36" alt="PaidSure header" width="100%" />
 
-### **Paid? Sure.** — Screenshot-proof UPI payment confirmation for every counter in India
+<a href="https://github.com/aravind220806/Paid_Sure">
+  <img src="https://readme-typing-svg.demolab.com?font=Inter&weight=700&size=30&duration=3000&pause=1200&color=6D5EFC&center=true&vCenter=true&width=820&height=80&lines=Paid%3F+Sure.;No+gateway.+No+fees.+No+fake+screenshots.;Your+VPA.+Your+bank.+Your+phone.+With+proof." alt="Typing animation" />
+</a>
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Node](https://img.shields.io/badge/node-%E2%89%A520.x-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org)
-[![React](https://img.shields.io/badge/frontend-React%2018-61DAFB?logo=react&logoColor=black)](https://react.dev)
-[![Kotlin](https://img.shields.io/badge/android-Kotlin-7F52FF?logo=kotlin&logoColor=white)](https://kotlinlang.org)
-[![Postgres](https://img.shields.io/badge/db-PostgreSQL-4169E1?logo=postgresql&logoColor=white)](https://postgresql.org)
-[![Made for India](https://img.shields.io/badge/accepts-🇮🇳%20UPI-blue)]()
+<br>
 
-*No gateway. No fees. No fake screenshots. Your VPA, your bank, your phone — with proof.*
+[![License: MIT](https://img.shields.io/badge/License-MIT-6D5EFC?style=for-the-badge)](LICENSE)
+[![Node](https://img.shields.io/badge/Node-20%2B-339933?style=for-the-badge&logo=nodedotjs&logoColor=white)](https://nodejs.org)
+[![React](https://img.shields.io/badge/React-18-61DAFB?style=for-the-badge&logo=react&logoColor=black)](https://react.dev)
+[![Kotlin](https://img.shields.io/badge/Android-Kotlin-7F52FF?style=for-the-badge&logo=kotlin&logoColor=white)](https://kotlinlang.org)
+[![Status](https://img.shields.io/badge/Phase%201-In%20Progress-F59E0B?style=for-the-badge)](#-roadmap)
 
-[Quick Start](#-quick-start) · [How It Works](#️-how-it-works) · [Features](#-feature-highlights) · [Roadmap](#-roadmap) · [FAQ](#-faq)
+<br>
+
+**[🚀 Quick Start](#-quick-start)** &nbsp;·&nbsp; **[🎯 Vision](#-vision--goals)** &nbsp;·&nbsp; **[✨ Features](#-features)** &nbsp;·&nbsp; **[⚙️ How It Works](#️-how-it-works)** &nbsp;·&nbsp; **[🗺️ Roadmap](#️-roadmap)** &nbsp;·&nbsp; **[❓ FAQ](#-faq)**
 
 </div>
 
+<br>
+
+## 🧭 At a Glance
+
+PaidSure lets a small shop, stall or social seller **confirm UPI payments automatically and with proof**, without paying a gateway fee and without trusting a customer's screenshot.
+
+| | |
+|---|---|
+| 💰 **Cost** | Zero transaction fees. Money goes straight to the merchant's own UPI ID (VPA). |
+| 🔐 **Trust** | Only an alert on the merchant's own phone can confirm an order. |
+| ⚡ **Speed** | Fast-lane confirmation in about 1–3 seconds through business-app notifications. |
+| 🔋 **Battery** | Event-driven design with no polling and no wake locks. Target: under 1.5% per day. |
+| 🇮🇳 **Built for** | Local merchants in India who already accept UPI. |
+
 ---
 
-> ⚠️ **The problem every small merchant knows:** a customer shows a "✅ Payment Successful" screen — edited, spoofed, or paid to the wrong VPA — and walks away with the goods. Manual checking stalls the queue. Sound boxes cost a monthly fee. Bank SMS gets missed when a phone's storage is full.
+## 🎯 Vision & Goals
 
-> 💡 **PaidSure fixes it:** every order gets a **unique paise amount** (₹499.**37**, ₹499.**52**…), so when a *₹499.37 credited* alert lands on the merchant's own phone — business-app push, bank SMS, or bank email — the order is **auto-confirmed with evidence**. Screenshots are never trusted. Sound-box behavior, at zero cost.
+> [!NOTE]
+> **Vision:** Every counter in India should be able to accept UPI with the same confidence a bank branch has, at no extra cost.
 
-## 🖼️ What it looks like
+**Why this matters.** Most merchant payment tools either charge per transaction or rely on the merchant checking a screen by eye. Both slow down the queue and cost money. PaidSure keeps the money on the public UPI rails and adds only a verification layer.
 
-**Customer checkout — one clean panel, one action**
+**Goals**
 
-```
-┌────────────────────────────────────────────────┐
-│  Shekar Store                                  │
-│  2 × Basmati Rice 5kg                  ₹998    │
-│  ─────────────────────────────────────────     │
-│  Total to pay                          ₹998.37 │
-│                                                │
-│  [        Open a UPI app          ]           │
-│                                                │
-│  Or scan the QR to pay from any device         │
-│        ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓          │
-│        ▓▓  ██▀▀██ ▓▓  ██ ▓▓▓ ██▄▄██ ▓▓         │
-│        ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓          │
-└────────────────────────────────────────────────┘
-```
+- 🎯 **Stop fake-payment losses.** Make a fake success screen worthless.
+- 🎯 **Remove the sound-box subscription.** Turn any Android phone into a free payment announcer.
+- 🎯 **Stay reliable when things break.** Use three independent channels so one failure does not block confirmations.
+- 🎯 **Be easy to extend.** A new bank is a new parser rule, not a rebuild.
+- 🎯 **Grow into a SaaS platform.** Self-serve sign-up, billing, payer CRM and daily ledgers for many merchants.
 
-**Live status — the customer never waits in doubt**
+---
 
-```
-   Waiting for payment…  ⏳  →  Payment received — confirming…  🔎  →  ✅ Paid ₹998.37
-```
+## 👥 Who It's For
 
-**Merchant dashboard — evidence, not trust**
+| Audience | What PaidSure gives them |
+|---|---|
+| 🏪 **Counter shops and kirana stores** | Auto-confirmed bills and a free voice announcement on the shop phone |
+| 🛍️ **Social sellers and small brands** | WhatsApp payment links that confirm without manual checks |
+| 🍽️ **Stalls, canteens and events** | Faster queues with proof for every payment |
+| 🧑‍💻 **Developers and contributors** | An open, well-structured codebase with a clear path to add new banks |
 
-```
-┌ Orders ─────────────────────────────────────────────────────┐
-│ #421  ₹998.37   ✅ Paid      via bank SMS + GPay push    2m  │
-│ #422  ₹149.52   ⏳ Waiting   expires in 6 min           4m  │
-│ #420  ₹79.99    ✅ Paid      via bank email           11m  │
-└─────────────────────────────────────────────────────────────┘
-```
-
-*Real screenshots land here after Phase 1.*
+---
 
 ## ⚙️ How It Works
+
+Every payment passes through four steps:
+
+1. **Create an order.** The store gets a unique amount for each order, such as ₹499.**37**.
+2. **The customer pays.** They use a UPI intent link or QR code with GPay, PhonePe or Paytm.
+3. **The merchant's phone hears about it.** The business-app push, bank SMS or bank email reports the credit.
+4. **PaidSure confirms it.** An exact amount match marks the order as paid and stores the evidence: UTR, VPA and channel.
 
 ```mermaid
 flowchart LR
     subgraph Customer
-        A[Store page<br/>unique amount ₹499.37] --> B[UPI intent link / QR]
+        A[🛒 Store page<br/>unique amount ₹499.37] --> B[📱 UPI link / QR]
         B --> C[GPay · PhonePe · Paytm]
     end
-    subgraph Merchant phone
-        C -->|pays| D[(Merchant bank<br/>zero fees)]
-        D --> E[📲 Business-app push<br/>~1–3s · fast lane]
-        D --> F[📩 Bank credit SMS<br/>authoritative]
-        D --> G[📧 Bank email · IMAP<br/>recovery tier]
+
+    subgraph Merchant Phone
+        C -->|pays| D[(🏦 Merchant bank<br/>zero fees)]
+        D --> E[⚡ Business-app push<br/>~1–3 s]
+        D --> F[📩 Bank SMS<br/>authoritative]
+        D --> G[📧 Bank email<br/>recovery]
     end
+
     subgraph Backend
-        E & F & G --> H{Parser + dedupe}
-        H --> I[Matching engine<br/>exact amount within window]
-        I --> J[✅ Order confirmed<br/>evidence · UTR · channel]
-        J --> K[SSE → live status ·<br/>voice announce · dashboard feed]
+        E & F & G --> H{{Parser + dedupe}}
+        H --> I[Matching engine<br/>exact amount in window]
+        I --> J[✅ Confirmed<br/>evidence · UTR · channel]
+        J --> K[SSE → live status<br/>voice · dashboard]
     end
-    K --> L[Customer sees Paid ✅]
-    K --> M[Merchant sees proof]
+
+    K --> L[🙂 Customer sees Paid]
+    K --> M[🧾 Merchant sees proof]
+
+    classDef fast fill:#6D5EFC,color:#fff,stroke:none
+    classDef ok fill:#16A34A,color:#fff,stroke:none
+    class E fast
+    class J ok
 ```
 
-## ✨ Feature Highlights
+---
 
-| | Feature | What it means for the merchant |
-|---|---|---|
-| 🔒 | **Screenshot-proof by design** | Confirmation comes only from the merchant's own payment channels |
-| ⚡ | **Tri-lane instant capture** | Business-app push (1–3s) → bank SMS → bank email; first match wins, deduped into one payment |
-| 🗣️ | **Voice announce (free sound box)** | *“₹549 received, order 421”* spoken on the shop phone, English / Hindi / regional languages |
-| 🚨 | **Capture Health + Auto-Fix** | Device heartbeats, 🟢🟡🔴 status, alarm on failure, one-tap FIX NOW wizard verified by a ₹1 self-test |
-| 🔋 | **Battery-respectful** | Fully event-driven — no polling, no wake locks; target **< 1.5%/day** |
-| 💬 | **WhatsApp payment links** | Create an order → share the link in a chat → auto-confirmed |
-| 🕒 | **Late-match window** | A payment that lands late still auto-links to its order within 12 hours |
-| 🧾 | **Full evidence ledger** | Every confirmation stores the raw SMS/push, UTR, VPA and channel; unmatched credits never vanish |
-| 🏪 | **Multi-merchant platform** | Each merchant gets a store page, dashboard, devices, parser rules and strict/instant confirm mode |
+## ✨ Features
+
+<table>
+<tr>
+<td width="33%" valign="top">
+
+### 🔒 Screenshot-proof
+Confirmation comes only from the merchant's own payment channels.
+
+</td>
+<td width="33%" valign="top">
+
+### ⚡ Tri-lane capture
+Push → SMS → email. The first match wins, and duplicates merge into one payment.
+
+</td>
+<td width="33%" valign="top">
+
+### 🗣️ Voice announce
+*"₹549 received, order 421"* is spoken on the shop phone in English, Hindi or regional languages.
+
+</td>
+</tr>
+<tr>
+<td width="33%" valign="top">
+
+### 🚨 Capture Health
+Device heartbeats, 🟢🟡🔴 status, failure alarms and a **FIX NOW** wizard verified by a ₹1 self-test.
+
+</td>
+<td width="33%" valign="top">
+
+### 🔋 Battery-respectful
+Event-driven with no polling and no wake locks.
+
+</td>
+<td width="33%" valign="top">
+
+### 💬 WhatsApp links
+Create an order, share the link in a chat, and it confirms by itself.
+
+</td>
+</tr>
+<tr>
+<td width="33%" valign="top">
+
+### 🕒 Late-match window
+A payment that arrives late still links to its order within **12 hours**.
+
+</td>
+<td width="33%" valign="top">
+
+### 🧾 Evidence ledger
+Raw SMS or push, UTR, VPA and channel are stored. Unmatched credits are never lost.
+
+</td>
+<td width="33%" valign="top">
+
+### 🏪 Multi-merchant
+Each merchant gets a store page, dashboard, devices, parser rules and a choice of strict or instant confirmation.
+
+</td>
+</tr>
+</table>
+
+---
+
+## 🧠 Why PaidSure Is Different
+
+> [!IMPORTANT]
+> **PaidSure is a verification layer, not a payment gateway.** It never holds money. It only proves that money reached the merchant's own account.
+
+| | PaidSure | Typical gateway | Paid sound box |
+|---|:---:|:---:|:---:|
+| Transaction fees | **₹0** | Per transaction | Monthly fee |
+| Settlement delay | **None** | Days | None |
+| Works if push is off | **✅ SMS + email** | N/A | ❌ |
+| Fake screenshot can confirm | **❌ Never** | ❌ Never | ❌ Never |
+| Unique amount per order | **✅** | Varies | ❌ |
+
+---
 
 ## 🧱 Tech Stack
 
-| Layer | Tech | Piece it plays |
+| Layer | Technology | Role |
 |---|---|---|
-| Backend API | **Node + Express + TypeScript** | Orders, intent/QR, ingest, SSE |
-| Database | **PostgreSQL + Prisma** | Merchants, orders, evidence, parser rules |
-| Parser engine | Rule-based pattern engine | Bank SMS/push formats; a new bank is a new rule, not a rebuild |
-| Frontend | **React + Vite**, Apple-grade design tokens | Store checkout, live status, dashboards |
-| Android | **Kotlin** — notification listener + SMS receiver | Capture, alarms and TTS, auto-fix wizard |
-| Realtime | Server-Sent Events | Live status and confirmation feeds |
+| **Backend** | Node · Express · TypeScript | Orders, intent/QR, ingest, live updates |
+| **Database** | PostgreSQL · Prisma | Merchants, orders, evidence, parser rules |
+| **Parser** | Rule-based patterns | Adds a new bank with a rule, not a rebuild |
+| **Frontend** | React · Vite | Checkout, live status, dashboards |
+| **Android** | Kotlin | Notification listener, SMS receiver, alarms, TTS |
+| **Realtime** | Server-Sent Events | Live status and confirmation feeds |
 
-## 📁 Repo Structure
+---
 
+## 📊 Performance Targets
+
+| Metric | Target | How |
+|---|:---:|---|
+| ⚡ Fast-lane confirmation | **< 3–5 s** | Business-app notification capture |
+| 📩 Fallback confirmation | **< 60 s** | Bank SMS parser |
+| 🔋 Battery impact | **< 1.5% / day** | Event-driven design, quiet-hour throttling |
+| 🏪 Concurrent orders | **1,000s per merchant** | Indexed unique `(merchant, amount_paise)` allocation |
+
+---
+
+## 🛡️ Security & Privacy
+
+- **Consent first.** The Android helper reads a merchant's own notifications and SMS only with their consent, and only as payment evidence.
+- **Evidence stays with the merchant.** Raw messages are used to confirm payments and are not shared.
+- **Pairing tokens.** Devices pair with the dashboard using signed device tokens.
+- **Redacted samples.** Bug reports ask for SMS samples with names removed.
+
+---
+
+## 🗺️ Roadmap
+
+```mermaid
+timeline
+    title PaidSure Journey
+    section Phase 1 · The Money Loop 🔨
+        Unique-amount orders : Parser v1 for top banks
+        Android capture      : Dashboard v1
+    section Phase 2 · Reliability 📋
+        Capture Health       : Alarm + auto-fix wizard
+        Battery engineering  : WhatsApp links + IMAP tier
+    section Phase 3 · SaaS & Scale 🧭
+        Self-serve sign-up   : Billing + payer CRM
+        Daily ledger         : Receipts, printing, deployment
 ```
-paid-sure/
-├── backend/                  # Express API
-│   ├── src/routes/           # orders · ingest · webhooks · admin
-│   ├── src/services/         # amount-engine · parser · matcher · evidence
-│   ├── src/db/               # prisma schema + migrations
-│   └── .env.example
-├── frontend/                 # React (Vite)
-│   ├── src/pages/store/      # customer checkout + live status
-│   ├── src/pages/dashboard/  # merchant + platform admin
-│   └── src/design/           # design tokens (clean, Apple-grade system)
-├── android/                  # PaidSure Alerts (Kotlin)
-│   ├── capture/              # notification listener + SMS receiver
-│   ├── alert/                # alarms · TTS · auto-fix wizard
-│   └── net/                  # ingest client · offline queue · heartbeat
-├── docs/                     # bank SMS format notes · architecture
-└── .github/                  # CI · issue templates
-```
+
+---
 
 ## 🚀 Quick Start
 
+### Prerequisites
+- Node.js **20.x or newer**
+- A PostgreSQL database
+- Android Studio (for the helper app)
+
+### 1️⃣ Backend
 ```bash
 git clone https://github.com/aravind220806/Paid_Sure.git
-cd paid-sure
-
-# 1 — backend
-cd backend && npm install
-cp .env.example .env         # DATABASE_URL · JWT_SECRET · DEVICE_TOKEN_SECRET
-npx prisma migrate dev && npm run dev    # → http://localhost:4000
-
-# 2 — frontend
-cd ../frontend && npm install && npm run dev   # → http://localhost:5173
-
-# 3 — android helper
-# open android/ in Android Studio → run on the shop phone → pair via dashboard QR
+cd paid-sure/backend
+npm install
+cp .env.example .env          # set DATABASE_URL, JWT_SECRET, DEVICE_TOKEN_SECRET
+npx prisma migrate dev
+npm run dev                   # → http://localhost:4000
 ```
+
+### 2️⃣ Frontend
+```bash
+cd ../frontend
+npm install
+npm run dev                   # → http://localhost:5173
+```
+
+### 3️⃣ Android helper
+Open `android/` in Android Studio, run it on the shop phone, then pair it from the dashboard QR code.
 
 <details>
 <summary><b>🔧 Environment variables</b></summary>
 
+<br>
+
 | Variable | Used by | Description |
 |---|---|---|
-| `DATABASE_URL` | backend | PostgreSQL connection string |
-| `JWT_SECRET` | backend | Merchant dashboard sessions |
-| `DEVICE_TOKEN_SECRET` | backend | Android pairing tokens |
-| `VITE_API_URL` | frontend | Backend base URL |
-| `ADMIN_PASSWORD` | backend | Platform-admin access |
+| `DATABASE_URL` | Backend | PostgreSQL connection string |
+| `JWT_SECRET` | Backend | Merchant dashboard sessions |
+| `DEVICE_TOKEN_SECRET` | Backend | Android pairing tokens |
+| `ADMIN_PASSWORD` | Backend | Platform admin access |
+| `VITE_API_URL` | Frontend | Backend base URL |
 
 </details>
 
-## ⚡ Performance Targets
+---
 
-| Metric | Target | How |
-|---|---|---|
-| Confirmation latency (fast lane) | **< 3–5 s** | Business-app notification capture |
-| Fallback confirmation | **< 60 s** | Bank SMS parser |
-| Android battery impact | **< 1.5%/day** | Event-driven design; quiet-hour throttling |
-| Concurrent orders per merchant | **1,000s** | Indexed unique `(merchant, amount_paise)` allocation |
+## 📁 Project Structure
 
-## 🗺️ Roadmap
+```
+paid-sure/
+├── backend/                 # Express API
+│   ├── src/routes/          # orders · ingest · webhooks · admin
+│   ├── src/services/        # amount-engine · parser · matcher · evidence
+│   └── src/db/              # Prisma schema + migrations
+├── frontend/                # React (Vite)
+│   ├── src/pages/store/     # customer checkout + live status
+│   ├── src/pages/dashboard/ # merchant + platform admin
+│   └── src/design/          # design tokens
+├── android/                 # PaidSure Alerts (Kotlin)
+│   ├── capture/             # notification listener + SMS receiver
+│   ├── alert/               # alarms · TTS · auto-fix wizard
+│   └── net/                 # ingest client · offline queue · heartbeat
+└── docs/                    # bank SMS formats · architecture · banner.svg
+```
 
-| Phase | Status | Scope |
-|---|---|---|
-| **1 · MVP — the money loop** | 🔨 in progress | Orders + unique amounts · parser v1 (top banks) · Android capture · dashboard v1 |
-| **2 · Reliability product** | 📋 planned | Capture Health · alarm + auto-fix wizard · battery engineering · WhatsApp links · IMAP tier |
-| **3 · SaaS polish & scale** | 🧭 planned | Self-serve sign-up · billing · payer CRM · daily ledger · receipts and printing · deployment |
+---
 
 ## ❓ FAQ
 
 <details>
-<summary><b>Is PaidSure a payment gateway?</b></summary><br>
-No — and that is the point. Money moves on the public UPI rails into the merchant's own VPA. PaidSure is the <b>verification layer</b>: it proves the money arrived. Zero transaction fees, no settlement waiting, no KYC to start testing.
+<summary><b>Is PaidSure a payment gateway?</b></summary>
+
+<br>
+
+No. It is the **verification layer**. It proves that money arrived in the merchant's own VPA. There are no transaction fees, no settlement waiting, and no KYC needed to start testing.
+
 </details>
 
 <details>
-<summary><b>What if notifications are turned off?</b></summary><br>
-Layered channels: the business-app push is only the fastest lane — bank SMS and bank email keep working without notification access. Capture Health detects the silence, raises an alarm, and the FIX NOW wizard deep-links to the exact settings screen, proving recovery with a ₹1 self-test.
+<summary><b>What if notifications are turned off?</b></summary>
+
+<br>
+
+Bank SMS and bank email keep working without notification access. Capture Health detects the silence and raises an alarm. The FIX NOW wizard opens the right settings screen and confirms recovery with a ₹1 self-test.
+
 </details>
 
 <details>
-<summary><b>Can a customer fake it?</b></summary><br>
-The customer's screen is never a signal. Only an alert received on the <b>merchant's own phone</b> — bank SMS, business-app push, or bank email — can confirm an order, and every order has a unique amount.
+<summary><b>Can a customer fake it?</b></summary>
+
+<br>
+
+No. The customer's screen is never used as a signal. Only an alert received on the **merchant's own phone** can confirm an order, and every order has a unique amount.
+
 </details>
 
 <details>
-<summary><b>Why not just use Razorpay?</b></summary><br>
-Gateways charge per-transaction fees and add settlement delays. For many counter sales and social sellers, direct-to-VPA with proof is free and instant. PaidSure also works alongside a gateway — it is a verification layer, not a payment rail.
+<summary><b>Why not just use Razorpay?</b></summary>
+
+<br>
+
+Gateways charge per-transaction fees and add settlement delays. For many counter sales and social sellers, direct-to-VPA with proof is free and instant. PaidSure also works alongside a gateway.
+
 </details>
+
+---
 
 ## 🤝 Contributing
 
-Parser rules for new banks are the easiest high-value contribution — see [docs/bank-formats.md](docs/bank-formats.md). Bug reports that include a **raw sample SMS** (names redacted) are gold.
+Contributions are welcome. The easiest high-value contribution is a **parser rule for a new bank**. See [`docs/bank-formats.md`](docs/bank-formats.md).
+
+> [!TIP]
+> Bug reports that include a **raw sample SMS** (with names redacted) are the most helpful kind.
 
 ```bash
-npm run lint && npm run test   # before every PR
+npm run lint && npm run test   # run before every PR
 ```
+
+---
 
 ## 📜 License & Disclaimer
 
-MIT — see [LICENSE](LICENSE). PaidSure is not a licensed Payment Service Provider and does not touch NPCI rails; it verifies payments already made to the merchant's own VPA. "UPI", "BHIM", GPay, PhonePe and Paytm are properties of their respective owners. The Android helper reads **the merchant's own device notifications and SMS, with consent**, solely as payment evidence.
+Released under the [MIT License](LICENSE).
+
+> [!CAUTION]
+> PaidSure is **not** a licensed Payment Service Provider and does not touch NPCI rails. It verifies payments already made to the merchant's own VPA. "UPI", "BHIM", GPay, PhonePe and Paytm belong to their respective owners.
 
 ---
 
 <div align="center">
 
-**Built for every local merchant in India.** 🛍️
+<img src="docs/banner.svg" alt="PaidSure" width="100%" />
 
-⭐ Star this repo · 🐛 [Report an issue](../../issues) · 💬 [Discussions](../../discussions)
+**Built for every local merchant in India** 🛍️
+
+⭐ Star this repo &nbsp;·&nbsp; 🐛 [Report an issue](../../issues) &nbsp;·&nbsp; 💬 [Discussions](../../discussions)
 
 </div>
