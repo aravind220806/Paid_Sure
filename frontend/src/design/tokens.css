@@ -1,0 +1,61 @@
+/* ════════════════════════════════════════════════════════════════
+   PaidSure design tokens — ported from the Apple liquid-glass system.
+   Reference everything via var(--…); never hard-code a raw value
+   that a token already names.
+   ════════════════════════════════════════════════════════════════ */
+
+:root {
+  /* ── Neutrals (the interface skeleton) ── */
+  --bg: #f5f5f7; /* page ground — COOL grey-white, never warm/cream */
+  --surface: #ffffff; /* panels / cards */
+  --hover: #fbfbfd; /* row hover tint */
+  --text: #1d1d1f; /* primary text / titles */
+  --text-body: #424245; /* long-form body */
+  --text-2: #6e6e73; /* secondary / summary / meta */
+  --text-3: #86868b; /* tertiary / captions */
+  --text-4: #aeaeb2; /* placeholder / quaternary */
+  --faint: #d2d2d7; /* index numbers, arrows, dividers (very light) */
+  --hairline: rgba(0, 0, 0, 0.07); /* the divider line — used everywhere */
+
+  /* ── Accents (emphasis ONLY — body stays grayscale) ── */
+  --accent: #0071e3; /* Apple blue — primary action / link / focus */
+  --accent-link: #0066cc; /* link/tag text on tinted ground */
+  --heat: #ff6b00; /* heat / warnings / alerts accent */
+  --heat-bg: rgba(255, 107, 0, 0.1);
+  --live: #30d158; /* live / confirmed / online (pulsing dot) */
+
+  /* ── Signature gradients (hero / CTA placeholders ONLY) ── */
+  --grad-cta: linear-gradient(135deg, #0071e3 0%, #5e5ce6 100%);
+
+  /* ── Type ── */
+  --font:
+    -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display",
+    "Helvetica Neue", "Segoe UI", Roboto, Arial, sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, monospace;
+
+  /* ── Radius (semantic tiers — don't invent in-between values) ── */
+  --r-pill: 999px; /* pills / buttons / tags */
+  --r-thumb: 12px; /* thumbnails / small squares */
+  --r-card: 18px; /* standard card */
+  --r-panel: 22px; /* large panel / section container */
+  --r-hero: 26px; /* hero / focal block */
+
+  /* ── Shadow (two-layer: tight contact + soft spread; never one hard shadow) ── */
+  --sh-card: 0 1px 2px rgba(0, 0, 0, 0.04), 0 8px 24px rgba(0, 0, 0, 0.05);
+  --sh-panel: 0 1px 3px rgba(0, 0, 0, 0.05), 0 14px 40px rgba(0, 0, 0, 0.05);
+  --sh-lift: 0 12px 32px rgba(0, 0, 0, 0.1); /* hover lift, translateY(-3px) */
+  --sh-cta: 0 20px 54px rgba(0, 113, 227, 0.24); /* colored CTA */
+  --sh-overlay: 0 2px 8px rgba(0, 0, 0, 0.1), 0 30px 80px rgba(0, 0, 0, 0.24);
+
+  /* ── Component greys ── */
+  --track: #e8e8ed; /* progress/meter track, toggle-off track */
+
+  /* ── Layout ── */
+  --max-read: 720px; /* reading column */
+  --max-grid: 1080px; /* grid / dense column */
+  --pad-x: 22px; /* container side padding */
+
+  /* ── Motion (spring-like, CSS-first) ── */
+  --ease-spring: cubic-bezier(0.32, 0.72, 0, 1); /* enter: sheets/dialogs */
+  --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1); /* hover / small moves */
+}

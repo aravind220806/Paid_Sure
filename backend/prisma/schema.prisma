@@ -1,0 +1,144 @@
+// PaidSure data model (Phase 0/1).
+//
+// NOTE ON DATABASES:
+// SQLite is used for zero-setup local dev. For production switch
+// `provider` to "postgresql" and point DATABASE_URL at your Postgres.
+// If you then want real DB enums, replace the String status fields
+// (documented below) with Prisma enums — SQLite does not support enums.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Merchant {
+  id               String     @id @default(cuid())
+  name             String // display name, e.g. "Shekar Store"
+  slug             String     @unique // store URL: /s/:slug
+  vpa              String // receiving UPI ID, e.g. "shop@okaxis"
+  payeeName        String // name shown in the payer's UPI app
+  incomingPhone    String? // phone that receives the bank SMS (for reference only)
+  strictMode       Boolean    @default(false) // true = confirm only on bank SMS/email, never on app push
+  softAlertsOn     Boolean    @default(true) // "fast lane silent" nudges
+  lateMatchMinutes Int        @default(720) // 12h late-match window in minutes
+  confirmWindowMin Int        @default(15) // normal match window for a pending order
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+
+  devices   Device[]
+  orders    Order[]
+  products  Product[]
+  alerts    PaymentAlert[]
+  parsed    ParsedTransaction[]
+}
+
+model Device {
+  id         String    @id @default(cuid())
+  merchantId String
+  merchant   Merchant  @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  label      String    @default("Shop phone")
+  tokenHash  String    @unique // paired device tokens are stored hashed only
+  lastSeenAt DateTime? // heartbeat
+  batteryPct Int? // reported with heartbeat
+  listenerOn Boolean   @default(false) // notification-listener capture healthy?
+  smsOn      Boolean   @default(false) // SMS receiver capture healthy?
+  createdAt  DateTime  @default(now())
+}
+
+model Product {
+  id         String   @id @default(cuid())
+  merchantId String
+  merchant   Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  name       String
+  pricePaise Int      @default(0)
+  active     Boolean  @default(true)
+  createdAt  DateTime @default(now())
+}
+
+// Status values (String on SQLite): PENDING | PAID | FAILED | EXPIRED | VOID
+// confirmedSource values: PUSH | SMS | EMAIL | MANUAL
+model Order {
+  id              String    @id @default(cuid())
+  merchantId      String
+  merchant        Merchant  @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  ref             String    @unique // human ref, e.g. "PS-000421"
+  amountPaise     Int // unique among this merchant's OPEN orders (allocator guarantees it)
+  status          String    @default("PENDING")
+  note            String? // shown to the customer in the UPI app
+  customerName    String?
+  intentUrl       String? // upi://pay?pa=...&am=... (built server-side)
+  qrPayload       String? // same payload, rendered client-side as QR
+  confirmedSource String?
+  paidAt          DateTime?
+  expiresAt       DateTime? // when set: pending no longer matches after this time
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  transactions ParsedTransaction[]
+
+  @@index([merchantId, status])
+  @@index([merchantId, amountPaise])
+  @@index([merchantId, createdAt])
+}
+
+// Raw capture as it arrived (SMS text or notification text), kept as evidence.
+// `hash` is the message fingerprint — dedupe across lanes and replays.
+model PaymentAlert {
+  id         String   @id @default(cuid())
+  merchantId String
+  merchant   Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  deviceId   String? // which paired device delivered it (null for email/IMAP)
+  source     String // PUSH | SMS | EMAIL
+  sender     String? // sender ID / package name / email From
+  body       String // full raw text — evidence of record
+  hash       String   @unique // sha256 fingerprint; identical message = one row
+  receivedAt DateTime @default(now())
+  processed  Boolean  @default(false)
+
+  transactions ParsedTransaction[]
+}
+
+// Parser output for one alert (0..1 per alert), the thing the matcher consumes.
+// status values: UNMATCHED | MATCHED | DUPLICATE | REVIEW
+model ParsedTransaction {
+  id             String       @id @default(cuid())
+  alertId        String
+  alert          PaymentAlert @relation(fields: [alertId], references: [id], onDelete: Cascade)
+  merchantId     String
+  merchant       Merchant     @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  isCredit       Boolean
+  amountPaise    Int
+  utr            String?
+  payerHint      String?
+  source         String // PUSH | SMS | EMAIL
+  ruleKey        String? // which parser rule fired (None/Generic/x)
+  confidence     Int          @default(50) // 0–100
+  status         String       @default("UNMATCHED")
+  matchedOrderId String?
+  order          Order?       @relation(fields: [matchedOrderId], references: [id])
+  matchedAt      DateTime?
+  createdAt      DateTime     @default(now())
+
+  @@index([merchantId, status])
+  @@index([matchedOrderId])
+}
+
+// Declarative parser rules (JSON blobs; structure documented in docs/bank-formats.md)
+model ParserRule {
+  id         String  @id @default(cuid())
+  key        String  @unique // e.g. "hdfc-credit-v1"
+  kind       String // SMS | PUSH | EMAIL
+  owner      String // bank/app name, e.g. "HDFC", "PhonePe Business"
+  matchJson  String // senders / anyOf keywords
+  amountJson String // amount regexes
+  utrJson    String?
+  payerJson  String?
+  ignoreJson String? // debit/ignore keywords
+  priority   Int     @default(100)
+  enabled    Boolean @default(true)
+  notes      String?
+}

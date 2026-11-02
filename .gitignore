@@ -1,0 +1,36 @@
+# dependencies
+node_modules/
+
+# builds
+dist/
+build/
+coverage/
+.vite/
+*.tsbuildinfo
+
+# env & secrets
+.env
+.env.*
+!.env.example
+
+# local databases
+backend/dev.db
+backend/dev.db-journal
+backend/prisma/dev.db
+backend/prisma/dev.db-journal
+*.sqlite
+
+# android
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/.idea/
+*.apk
+*.aab
+
+# tooling / os
+.idea/
+*.iml
+.DS_Store
+*.log

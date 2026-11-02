@@ -1,0 +1,199 @@
+/* ════════════════════════════════════════════════════════════════
+   PaidSure global styles — built on tokens.css only.
+   Ground → unified white panels → hairline dividers. Glass only on
+   overlapping layers (sticky nav / overlays). Restraint is the luxury.
+   ════════════════════════════════════════════════════════════════ */
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+a {
+  color: var(--accent-link);
+  text-decoration: none;
+}
+a:hover {
+  text-decoration: underline;
+}
+
+h1,
+h2,
+h3 {
+  letter-spacing: -0.02em; /* negative tracking on titles */
+  line-height: 1.12;
+  font-weight: 700;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* numbers are always tabular (amounts, UTRs, times) */
+.num {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
+/* ── Layout containers ─────────────────────────────────────────── */
+.container {
+  max-width: var(--max-grid);
+  margin: 0 auto;
+  padding: 0 var(--pad-x);
+}
+.container--read {
+  max-width: var(--max-read);
+}
+
+/* ── Unified surface (NOT fragmented cards: one panel + hairlines) ── */
+.panel {
+  background: var(--surface);
+  border-radius: var(--r-panel);
+  box-shadow: var(--sh-panel);
+  overflow: hidden;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 20px;
+  border-top: 1px solid var(--hairline);
+  background: var(--surface);
+  transition: background 160ms var(--ease-out-quart);
+}
+.row:first-child {
+  border-top: none;
+}
+.row:hover {
+  background: var(--hover);
+}
+
+/* ── Glass — ONLY for overlapping layers (sticky nav) ─────────── */
+.glass-nav {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  background: rgba(245, 245, 247, 0.72);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  border-bottom: 1px solid var(--hairline);
+}
+
+/* ── Buttons ──────────────────────────────────────────────────── */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px; /* touch target */
+  padding: 0 18px;
+  border-radius: var(--r-pill);
+  border: none;
+  font: inherit;
+  font-weight: 600;
+  font-size: 15px;
+  cursor: pointer;
+  transition:
+    transform 180ms var(--ease-out-quart),
+    box-shadow 180ms var(--ease-out-quart),
+    background 160ms var(--ease-out-quart);
+}
+
+.btn--primary {
+  background: var(--accent);
+  color: #fff;
+  box-shadow: var(--sh-cta);
+}
+.btn--primary:hover {
+  background: var(--accent-link);
+  transform: translateY(-2px);
+}
+
+.btn--ghost {
+  background: transparent;
+  color: var(--accent-link);
+  border: 1px solid var(--hairline);
+  background-color: var(--surface);
+}
+.btn--ghost:hover {
+  background: var(--hover);
+  transform: translateY(-2px);
+}
+
+/* ── Status pills (color ONLY where it carries a job) ─────────── */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: var(--r-pill);
+  font-size: 12px;
+  font-weight: 600;
+}
+.chip--paid {
+  color: #0b6b3a;
+  background: rgba(48, 209, 88, 0.14);
+}
+.chip--waiting {
+  color: var(--text-2);
+  background: var(--track);
+}
+
+/* ── Live dot (pulsing) ───────────────────────────────────────── */
+.live-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--live);
+  display: inline-block;
+}
+.live-dot--pulse {
+  animation: pulse-dot 1.8s infinite;
+}
+@keyframes pulse-dot {
+  0% {
+    box-shadow: 0 0 0 0 rgba(48, 209, 88, 0.5);
+  }
+  70% {
+    box-shadow: 0 0 0 7px rgba(48, 209, 88, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(48, 209, 88, 0);
+  }
+}
+
+/* ── Responsive + reduced motion ──────────────────────────────── */
+@media (max-width: 640px) {
+  .panel {
+    border-radius: var(--r-card);
+  }
+  .row {
+    padding: 14px 16px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
