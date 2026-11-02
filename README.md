@@ -16,7 +16,7 @@
 
 <br>
 
-**[🚀 Quick Start](#-quick-start)** &nbsp;·&nbsp; **[🎯 Vision](#-vision--goals)** &nbsp;·&nbsp; **[✨ Features](#-features)** &nbsp;·&nbsp; **[⚙️ How It Works](#️-how-it-works)** &nbsp;·&nbsp; **[🗺️ Roadmap](#️-roadmap)** &nbsp;·&nbsp; **[❓ FAQ](#-faq)**
+**[🚀 Quick Start](#-quick-start)** &nbsp;·&nbsp; **[🎯 Vision](#-vision--goals)** &nbsp;·&nbsp; **[✨ Features](#-features)** &nbsp;·&nbsp; **[⚙️ How It Works](#️-how-it-works)** &nbsp;·&nbsp; **[📋 Requirements](#-what-you-need)** &nbsp;·&nbsp; **[🗺️ Roadmap](#️-roadmap)** &nbsp;·&nbsp; **[❓ FAQ](#-faq)**
 
 </div>
 
@@ -72,7 +72,7 @@ Every order passes through four steps:
 
 1. **Your website creates the order.** One call to `POST /api/orders` returns a unique amount (₹499.**37**), a `upi://` redirect link, a QR and a hosted live-status page.
 2. **The customer pays.** Your site redirects them — or shows the QR — and any UPI app (GPay, PhonePe, Paytm) opens pre-filled with the amount. They return to your site.
-3. **The payment self-reports.** The paired capture phone collects the credit evidence: business-app push, bank SMS or bank email.
+3. **The payment self-reports.** The paired capture phone collects the credit evidence: business-app push, bank SMS or bank email. *(The ~1–3 s fast lane needs a UPI business app with its payment notifications ON — see [What you need](#-what-you-need). SMS/email keep working without it.)*
 4. **PaidSure verifies and you finalize.** An exact-amount match marks the order PAID with evidence stored (UTR, VPA, channel); your backend reads the status (REST) or the webhook/SSE and releases the goods.
 
 ```mermaid
@@ -241,12 +241,30 @@ timeline
 
 ---
 
+## 📋 What You Need
+
+PaidSure doesn't process money, so getting paid-ready needs **your own accounts plus one phone**:
+
+| # | Requirement | Why |
+|---|---|---|
+| 1️⃣ | **Your own UPI ID (VPA)** — e.g. `yourstore@okaxis` | Checkout funds settle directly here. No PaidSure-owned account ever exists. |
+| 2️⃣ | **A bank account that sends credit SMS/alerts** | The authoritative confirmation lane. |
+| 3️⃣ | **One Android phone** (the receiving/SIM phone) | Runs **PaidSure Alerts**, the capture engine — event-driven, ~1.5% battery/day. |
+| 4️⃣ | **A UPI business app with notifications ON** — Google Pay for Business, PhonePe Business or Paytm for Business, holding your VPA, with "payment received" notifications enabled | This is the **fast lane**: "you received ₹X" pushes in ~1–3 seconds. |
+| 5️⃣ | **PaidSure Alerts paired** (dashboard QR pairing) | Captures push + SMS evidence and reports device health. |
+
+> [!IMPORTANT]
+> **Notifications ON is the one switch that makes PaidSure instant.** If it's ever off, you don't lose correctness — bank SMS and bank email still confirm (slower) — and **Capture Health** catches the silence, sounds the alarm, and the **FIX NOW** wizard deep-links to the exact settings screen, proving recovery with a ₹1 self-test.
+
+---
+
 ## 🚀 Quick Start
 
 ### Prerequisites
 - Node.js **20.x or newer**
 - A database Prisma supports — **SQLite for quick dev**, PostgreSQL for production
-- Later: one paired Android phone (the capture engine) — not needed for the first requests
+- For live end-to-end: the items in [📋 What you need](#-what-you-need) — a VPA and a capture phone with a UPI business app (notifications ON)
+- Not needed for your first local requests
 
 ### 1️⃣ Backend
 ```bash
