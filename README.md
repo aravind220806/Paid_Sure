@@ -195,7 +195,7 @@ Store pages, dashboards, strict/instant confirm modes — powered by the event-d
 | Layer | Technology | Role |
 |---|---|---|
 | **Backend** | Node · Express · TypeScript | Orders, intent/QR, ingest, live updates |
-| **Database** | PostgreSQL · Prisma | Merchants, orders, evidence, parser rules |
+| **Database** | Prisma · SQLite (dev) / PostgreSQL (prod) | Merchants, orders, evidence, parser rules |
 | **Parser** | Rule-based patterns | Adds a new bank with a rule, not a rebuild |
 | **Frontend** | React · Vite | Hosted checkout, live status page, dashboards |
 | **Android** | Kotlin | Notification listener, SMS receiver, alarms, TTS |

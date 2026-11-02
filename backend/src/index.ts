@@ -1,12 +1,33 @@
 import express, { type Express, type NextFunction, type Request, type Response } from "express";
 import cors from "cors";
-import { config } from "./config.js";
+import { allowedOrigins, config } from "./config.js";
 import { healthRouter } from "./routes/health.js";
 
 const app: Express = express();
 
 app.disable("x-powered-by");
-app.use(cors());
+
+// Minimal security header set — APIs serve JSON only, no CSP needed here yet.
+app.use((_req: Request, res: Response, next: NextFunction) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "DENY");
+  res.setHeader("Referrer-Policy", "no-referrer");
+  res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+  next();
+});
+
+// CORS: explicit allowlist only. Empty ALLOWED_ORIGINS (dev default) denies
+// every cross-origin request — the Vite dev proxy is same-origin, so local
+// frontend work needs no CORS entry.
+app.use(
+  cors({
+    origin: (origin, cb) => {
+      if (!origin || allowedOrigins.includes(origin)) return cb(null, true);
+      return cb(null, false); // silently withhold ACAO → browser blocks
+    },
+  }),
+);
+
 app.use(express.json({ limit: "256kb" }));
 
 app.use(healthRouter);
