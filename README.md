@@ -332,6 +332,7 @@ timeline
     section Phase 3 · SaaS & Scale 🧭
         Self-serve sign-up                : Billing + payer CRM
         Daily ledger                      : Receipts, printing, deployment
+        Global receiving 🌍               : Beyond-India banks + rails
 ```
 
 ---
@@ -342,14 +343,37 @@ PaidSure doesn't process money, so getting paid-ready needs **your own accounts 
 
 | # | Requirement | Why |
 |---|---|---|
-| 1️⃣ | **Your own UPI ID (VPA)** — e.g. `yourstore@okaxis` | Checkout funds settle directly here. No PaidSure-owned account ever exists. |
-| 2️⃣ | **A bank account that sends credit SMS/alerts** | The authoritative confirmation lane. |
+| 1️⃣ | **A current (business) bank account with your own UPI ID (VPA)** — e.g. `yourstore@okaxis` | Checkout funds settle directly here. Business income belongs on a business account — see [why below](#-why-a-business-account-not-personal). |
+| 2️⃣ | **A bank that sends credit SMS/alerts** | The authoritative confirmation lane. |
 | 3️⃣ | **One Android phone** (the receiving/SIM phone) | Runs **PaidSure Alerts**, the capture engine — event-driven, ~1.5% battery/day. |
 | 4️⃣ | **A UPI business app with notifications ON** — Google Pay for Business, PhonePe Business or Paytm for Business, holding your VPA, with "payment received" notifications enabled | This is the **fast lane**: "you received ₹X" pushes in ~1–3 seconds. |
 | 5️⃣ | **PaidSure Alerts paired** (dashboard QR pairing) | Captures push + SMS evidence and reports device health. |
 
 > [!IMPORTANT]
 > **Notifications ON is the one switch that makes PaidSure instant.** If it's ever off, you don't lose correctness — bank SMS and bank email still confirm (slower) — and **Capture Health** catches the silence, sounds the alarm, and the **FIX NOW** wizard deep-links to the exact settings screen, proving recovery with a ₹1 self-test.
+
+### 🏦 Why a Business Account (Not Personal)
+
+A personal bank account is designed for personal money: salary in, expenses out. Online selling is a different pattern — **dozens of small credits arriving daily from many different people**. Banks watch for exactly this, and when it shows up on a *personal* account, the usual outcomes are UPI disabled, transactions held for review, or the account **frozen pending verification** — with your sales money locked inside while you collect paperwork.
+
+| Setup | What a small online seller experiences |
+|---|---|
+| ❌ Personal account receiving business payments | Flagged inflow pattern → UPI/cards blocked or account frozen until the income is verified — sales money stuck at the worst moment |
+| ✅ Current (business) account + business UPI app | Heavy small-ticket inflow is *the* expected pattern → no flags, higher receiving limits, statements that work for accounting and taxes |
+
+Setting up the business side also brings the business apps (Google Pay for Business, PhonePe Business, Paytm for Business), which are:
+
+- **Free** to set up — and receiving UPI on them costs **₹0**. No per-transaction charges, no platform fees.
+- **Home of the fast lane** — the "You received ₹X" notification PaidSure reads in ~1–3 seconds.
+- **Built on your current-account VPA** — one setup, a lifetime of sales.
+
+> [!NOTE]
+> **Why this matters to PaidSure's design:** the unique amount per order works the same for a local or an international buyer — verification just reads your bank's credit evidence, wherever the payer's money came from.
+
+### 🌍 Customers From Anywhere (Roadmap)
+
+- **Payer side — already global today:** UPI International lets customers abroad pay to your VPA/QR from a growing list of countries (Singapore, UAE, France and more, via partner apps). PaidSure's checkout just creates the order — identical whether the customer sits next door or abroad.
+- **Receiving side — India today, global next.** The capture engine (bank SMS/push parsers, PaidSure Alerts) is built for Indian banks and business apps first. Extending the receiver toolkit to other countries' banks and payment rails is on the roadmap (Phase 3).
 
 ---
 
