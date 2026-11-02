@@ -134,7 +134,7 @@ paid-sure/
 ## 🚀 Quick Start
 
 ```bash
-git clone https://github.com/aravind220806/paid-sure.git
+git clone https://github.com/aravind220806/Paid_Sure.git
 cd paid-sure
 
 # 1 — backend
