@@ -7,10 +7,12 @@ import { ordersRouter } from "./routes/orders.js";
 import { ingestRouter } from "./routes/ingest.js";
 import { adminRouter } from "./routes/admin.js";
 import { startOrderSweeper, sweepExpiredOrders } from "./services/orderSweeper.js";
+import { rateLimit } from "./lib/rateLimit.js";
 
 const app: Express = express();
 
 app.disable("x-powered-by");
+if (config.TRUST_PROXY > 0) app.set("trust proxy", config.TRUST_PROXY);
 
 // Minimal security header set — APIs serve JSON only, no CSP needed here yet.
 app.use((_req: Request, res: Response, next: NextFunction) => {
@@ -18,6 +20,9 @@ app.use((_req: Request, res: Response, next: NextFunction) => {
   res.setHeader("X-Frame-Options", "DENY");
   res.setHeader("Referrer-Policy", "no-referrer");
   res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+  if (config.NODE_ENV === "production") {
+    res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+  }
   next();
 });
 
@@ -38,7 +43,16 @@ app.use(express.json({ limit: "256kb" }));
 app.use(healthRouter);
 app.use("/api/orders", ordersRouter);
 app.use("/api/ingest", ingestRouter);
-app.use("/api/admin", adminRouter);
+app.use(
+  "/api/admin",
+  rateLimit({
+    windowMs: 60_000,
+    max: 30,
+    key: (req) => `admin:${req.ip ?? "unknown"}`,
+    error: "admin_rate_limited",
+  }),
+  adminRouter,
+);
 
 // Unknown routes → clean JSON 404
 app.use((_req: Request, res: Response) => {

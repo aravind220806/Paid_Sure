@@ -10,6 +10,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../db.js";
 import { asyncRoute } from "../lib/asyncRoute.js";
+import { rateLimit, tokenOrIpKey } from "../lib/rateLimit.js";
 import { DeviceAuthedRequest, requireDevice } from "../auth.js";
 import { processIngestMessage } from "../services/matcher.js";
 
@@ -32,8 +33,16 @@ const ingestSchema = z.object({
 
 export const ingestRouter = Router();
 
+const ingestLimiter = rateLimit({
+  windowMs: 60_000,
+  max: 120,
+  key: tokenOrIpKey,
+  error: "ingest_rate_limited",
+});
+
 ingestRouter.post(
   "/",
+  ingestLimiter,
   requireDevice,
   asyncRoute(async (req, res) => {
     const body = ingestSchema.safeParse(req.body);
@@ -58,6 +67,7 @@ ingestRouter.post(
       where: { id: device.id },
       data: {
         lastSeenAt: new Date(),
+        lastSeenIp: req.ip ?? null,
         batteryPct: health.batteryPct ?? undefined,
         listenerOn: health.listenerOn ?? undefined,
         smsOn: health.smsOn ?? undefined,

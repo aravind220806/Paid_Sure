@@ -14,6 +14,12 @@ import { newOrderRef } from "../lib/refcode.js";
 import { buildUpiPayUrl, paiseToUpiAmount } from "../lib/upi.js";
 import { allocateFingerprint } from "../services/orderAllocator.js";
 import {
+  acquireConcurrent,
+  rateLimit,
+  releaseConcurrent,
+  tokenOrIpKey,
+} from "../lib/rateLimit.js";
+import {
   MerchantAuthedRequest,
   requireMerchant,
 } from "../auth.js";
@@ -47,11 +53,25 @@ function withWriteLock<T>(task: () => Promise<T>): Promise<T> {
 
 export const ordersRouter = Router();
 
+// Order creation is per merchant key (so one seller can't exhaust the shared
+// fingerprint space for everyone); status lookups are per IP.
+const orderCreateLimiter = rateLimit({
+  windowMs: 60_000,
+  max: 60,
+  key: tokenOrIpKey,
+  error: "order_rate_limited",
+});
+const statusLimiter = rateLimit({ windowMs: 60_000, max: 120 });
+const sseAttemptLimiter = rateLimit({ windowMs: 60_000, max: 30 });
+const MAX_SSE_PER_IP = 5;
+const SSE_MAX_LIFETIME_MS = 10 * 60_000;
+
 const statusUrlFor = (ref: string): string =>
   `${config.PUBLIC_APP_URL.replace(/\/$/, "")}/s/${ref}`;
 
 ordersRouter.post(
   "/",
+  orderCreateLimiter,
   requireMerchant,
   asyncRoute(async (req, res) => {
     const body = createSchema.safeParse(req.body);
@@ -187,10 +207,12 @@ async function allocateRef(db: Prisma.TransactionClient): Promise<string> {
     const clash = await db.order.findUnique({ where: { ref } });
     if (!clash) return ref;
   }
-  return `PS-${Date.now().toString(36).toUpperCase().slice(-8)}`;
+  // 80 random bits makes this effectively impossible; fail rather than fall
+  // back to a predictable timestamp ref.
+  throw new Error("could not allocate a unique order ref");
 }
 
-ordersRouter.get("/:ref", asyncRoute(async (req, res) => {
+ordersRouter.get("/:ref", statusLimiter, asyncRoute(async (req, res) => {
   const order = await prisma.order.findUnique({
     where: { ref: req.params.ref },
     include: {
@@ -208,6 +230,9 @@ ordersRouter.get("/:ref", asyncRoute(async (req, res) => {
     res.status(404).json({ ok: false, error: "order_not_found" });
     return;
   }
+  // Order data includes a UTR and the merchant's VPA — never let a shared
+  // cache retain it.
+  res.set("Cache-Control", "no-store, max-age=0");
   const checkoutExpired =
     order.status === "PENDING" && order.expiresAt != null && order.expiresAt < new Date();
   // Older rows predate baseAmountPaise; their fingerprint was always < ₹1.
@@ -238,49 +263,91 @@ ordersRouter.get("/:ref", asyncRoute(async (req, res) => {
   });
 }));
 
-ordersRouter.get("/:ref/events", asyncRoute(async (req, res) => {
-  const initial = await prisma.order.findUnique({ where: { ref: req.params.ref } });
-  if (!initial) {
-    res.status(404).json({ ok: false, error: "order_not_found" });
+ordersRouter.get("/:ref/events", sseAttemptLimiter, asyncRoute(async (req, res) => {
+  const streamKey = `sse:${req.ip ?? "unknown"}`;
+  if (!acquireConcurrent(streamKey, MAX_SSE_PER_IP)) {
+    res.set("Retry-After", "10");
+    res.status(429).json({
+      ok: false,
+      error: "too_many_streams",
+      message: "Too many live status connections. Close another tab and retry.",
+    });
     return;
   }
-  res.set({
-    "content-type": "text/event-stream",
-    "cache-control": "no-cache, no-transform",
-    connection: "keep-alive",
-    "x-accel-buffering": "no",
-  });
-  res.flushHeaders();
 
-  let lastSent = "";
-  const send = (payload: unknown) => {
-    res.write(`event: status\ndata: ${JSON.stringify(payload)}\n\n`);
+  let released = false;
+  let poll: ReturnType<typeof setInterval> | null = null;
+  let lifetime: ReturnType<typeof setTimeout> | null = null;
+  const release = () => {
+    if (released) return;
+    released = true;
+    if (poll) clearInterval(poll);
+    if (lifetime) clearTimeout(lifetime);
+    releaseConcurrent(streamKey);
   };
 
-  const emit = async () => {
-    const order = await prisma.order.findUnique({ where: { ref: initial.ref } });
-    if (!order) return true;
-    if (order.status !== lastSent) {
-      lastSent = order.status;
-      send({ ref: order.ref, status: order.status, paidAt: order.paidAt?.toISOString() ?? null });
+  try {
+    const initial = await prisma.order.findUnique({ where: { ref: req.params.ref } });
+    if (!initial) {
+      res.status(404).json({ ok: false, error: "order_not_found" });
+      return;
     }
-    return order.status !== "PENDING"; // true → close the stream
-  };
+    res.set({
+      "content-type": "text/event-stream",
+      "cache-control": "no-cache, no-transform",
+      connection: "keep-alive",
+      "x-accel-buffering": "no",
+    });
+    res.flushHeaders();
 
-  await emit();
-  const poll = setInterval(() => {
-    emit()
-      .then((done) => {
-        if (!done) return;
-        clearInterval(poll);
-        res.write("event: end\ndata: {}\n\n");
-        res.end();
-      })
-      .catch((error) => {
-        console.error("[paidsure] SSE status stream failed", error);
-        clearInterval(poll);
-        res.end();
-      });
-  }, 2000);
-  req.on("close", () => clearInterval(poll));
+    let lastSent = "";
+    let closed = false;
+    const send = (payload: unknown) => {
+      res.write(`event: status\ndata: ${JSON.stringify(payload)}\n\n`);
+    };
+
+    const emit = async () => {
+      const order = await prisma.order.findUnique({ where: { ref: initial.ref } });
+      if (!order) return true;
+      if (order.status !== lastSent) {
+        lastSent = order.status;
+        send({ ref: order.ref, status: order.status, paidAt: order.paidAt?.toISOString() ?? null });
+      }
+      return order.status !== "PENDING"; // true → close the stream
+    };
+
+    const close = () => {
+      if (closed) return;
+      closed = true;
+      if (poll) clearInterval(poll);
+      res.write("event: end\ndata: {}\n\n");
+      res.end();
+      release();
+    };
+
+    const done = await emit();
+    if (done) {
+      close();
+      return;
+    }
+
+    poll = setInterval(() => {
+      emit()
+        .then((finished) => {
+          if (finished) close();
+        })
+        .catch((error) => {
+          console.error("[paidsure] SSE status stream failed", error);
+          close();
+        });
+    }, 2000);
+
+    // Do not let one browser hold a stream forever.
+    lifetime = setTimeout(close, SSE_MAX_LIFETIME_MS);
+    lifetime.unref?.();
+    req.on("close", release);
+  } catch (error) {
+    release();
+    throw error;
+  }
 }));

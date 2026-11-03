@@ -1,9 +1,12 @@
 /**
- * Human order references: "PS-000421" style. Uniqueness is checked against
- * the DB by the caller (collision odds are 1-in-a-million per call).
+ * Human order references: "PS-" + 20 hex characters (80 random bits).
+ *
+ * Phase 1 used a 6-digit ref (`PS-000421`), which was enumerable in minutes
+ * with no rate limit. The public status URL now carries an unguessable ref;
+ * the `PS-` prefix keeps links recognisable.
  */
-import { randomInt } from "node:crypto";
+import { randomBytes } from "node:crypto";
 
 export function newOrderRef(): string {
-  return `PS-${String(randomInt(0, 1_000_000)).padStart(6, "0")}`;
+  return `PS-${randomBytes(10).toString("hex")}`;
 }

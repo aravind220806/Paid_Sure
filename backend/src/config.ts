@@ -25,6 +25,22 @@ const schema = z.object({
     .url()
     .default("http://localhost:5173")
     .describe("Base URL of the frontend — used to build hosted status links."),
+  TRUST_PROXY: z.coerce
+    .number()
+    .int()
+    .min(0)
+    .max(10)
+    .default(0)
+    .describe("Express trust-proxy hops; set to 1 behind Render/Cloudflare."),
+  ALLOW_PRIVATE_WEBHOOKS: z
+    .enum(["true", "false"])
+    .default("false")
+    .transform((v) => v === "true")
+    .describe("Allow http:// and private-IP webhook targets (local dev only)."),
+  ADMIN_IP_ALLOWLIST: z
+    .string()
+    .default("")
+    .describe("Comma-separated IPs allowed to call /api/admin. Empty = any IP."),
 });
 
 export type AppConfig = z.infer<typeof schema>;
@@ -58,6 +74,16 @@ export function assertNoProductionHazards(cfg: AppConfig): void {
   if (cfg.ADMIN_PASSWORD === "dev-admin-password") {
     throw new Error(
       "[config] ADMIN_PASSWORD still holds the dev default — change it (required in production)",
+    );
+  }
+  if (cfg.ADMIN_PASSWORD.length < 16) {
+    throw new Error(
+      "[config] ADMIN_PASSWORD must be at least 16 characters in production",
+    );
+  }
+  if (cfg.ALLOW_PRIVATE_WEBHOOKS) {
+    throw new Error(
+      "[config] ALLOW_PRIVATE_WEBHOOKS must be false in production (SSRF guard)",
     );
   }
 }

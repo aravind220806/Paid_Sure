@@ -83,12 +83,30 @@ export const requireDevice: RequestHandler = async (
   }
   const device = await prisma.device.findUnique({
     where: { tokenHash: sha256(token) },
-    select: { id: true, merchantId: true, label: true },
+    select: {
+      id: true,
+      merchantId: true,
+      label: true,
+      revokedAt: true,
+      expiresAt: true,
+    },
   });
   if (!device) {
     res.status(401).json({ ok: false, error: "invalid_device_token" });
     return;
   }
-  (req as DeviceAuthedRequest).device = device;
+  if (device.revokedAt != null) {
+    res.status(401).json({ ok: false, error: "device_revoked" });
+    return;
+  }
+  if (device.expiresAt != null && device.expiresAt < new Date()) {
+    res.status(401).json({ ok: false, error: "device_expired" });
+    return;
+  }
+  (req as DeviceAuthedRequest).device = {
+    id: device.id,
+    merchantId: device.merchantId,
+    label: device.label,
+  };
   next();
 };

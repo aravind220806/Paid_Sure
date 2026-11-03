@@ -124,4 +124,70 @@ describe("matcher", () => {
     });
     expect(result.outcome).not.toBe("matched");
   });
+
+  it("routes an unknown-sender credit to REVIEW and leaves the order pending", async () => {
+    const order = await addOpenOrder(77_777);
+    const result = await processIngestMessage(merchantId, deviceId, {
+      source: "SMS",
+      sender: "9876543210",
+      body: "Rs 777.77 credited to your account. UTR 999888777666.",
+    });
+    expect(result.outcome).toBe("review");
+    const after = await prisma.order.findUnique({ where: { id: order.id } });
+    expect(after?.status).toBe("PENDING");
+  });
+
+  it("does not confirm on a debit+credit ambiguity", async () => {
+    const order = await addOpenOrder(55_555);
+    const result = await processIngestMessage(merchantId, deviceId, {
+      source: "SMS",
+      sender: "HDFCBK",
+      body: "Rs 555.55 debited from a/c and Rs 555.55 credited to a/c. UTR 555555555555.",
+    });
+    expect(result.outcome).toBe("ignored");
+    const after = await prisma.order.findUnique({ where: { id: order.id } });
+    expect(after?.status).toBe("PENDING");
+  });
+
+  it("rejects a future-dated alert (device clock cannot pre-date an order)", async () => {
+    const order = await addOpenOrder(66_666);
+    const result = await processIngestMessage(merchantId, deviceId, {
+      source: "SMS",
+      sender: "HDFCBK",
+      body: "Rs 666.66 credited to a/c XX1 by UPI-Ref no 666666666666.",
+      receivedAt: new Date(Date.now() + 60 * 60_000).toISOString(),
+    });
+    expect(result.outcome).toBe("ignored");
+    const after = await prisma.order.findUnique({ where: { id: order.id } });
+    expect(after?.status).toBe("PENDING");
+  });
+
+  it("scopes dedupe to the merchant (same bank text for two sellers)", async () => {
+    const otherSlug = `${slug}-other`;
+    const other = await prisma.merchant.create({
+      data: {
+        name: "Other Merchant",
+        slug: otherSlug,
+        vpa: `other${Date.now()}@okaxis`,
+        payeeName: "Other",
+      },
+    });
+    const otherDevice = await prisma.device.create({
+      data: { merchantId: other.id, tokenHash: `h-${otherSlug}` },
+    });
+    const body = "Rs 444.44 credited to a/c XX1 by UPI-Ref no 444444444444.";
+    const a = await processIngestMessage(merchantId, deviceId, {
+      source: "SMS",
+      sender: "HDFCBK",
+      body,
+    });
+    const b = await processIngestMessage(other.id, otherDevice.id, {
+      source: "SMS",
+      sender: "HDFCBK",
+      body,
+    });
+    expect(a.outcome).not.toBe("duplicate");
+    expect(b.outcome).not.toBe("duplicate");
+    await prisma.merchant.delete({ where: { id: other.id } });
+  });
 });

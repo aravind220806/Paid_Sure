@@ -46,9 +46,12 @@ model Device {
   label      String    @default("Shop phone")
   tokenHash  String    @unique // paired device tokens are stored hashed only
   lastSeenAt DateTime? // heartbeat
+  lastSeenIp String? // last ingest source IP (anomaly detection)
   batteryPct Int? // reported with heartbeat
   listenerOn Boolean   @default(false) // notification-listener capture healthy?
   smsOn      Boolean   @default(false) // SMS receiver capture healthy?
+  expiresAt  DateTime? // null = legacy device without rotation; new devices get one
+  revokedAt  DateTime? // set when the phone is lost/replaced — token stops working
   createdAt  DateTime  @default(now())
 }
 
@@ -91,20 +94,25 @@ model Order {
 }
 
 // Raw capture as it arrived (SMS text or notification text), kept as evidence.
-// `hash` is the message fingerprint — dedupe across lanes and replays.
+// `hash` is the message fingerprint — dedupe is scoped to the merchant so one
+// merchant's identical bank text can never suppress another merchant's alert.
 model PaymentAlert {
-  id         String   @id @default(cuid())
-  merchantId String
-  merchant   Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
-  deviceId   String? // which paired device delivered it (null for email/IMAP)
-  source     String // PUSH | SMS | EMAIL
-  sender     String? // sender ID / package name / email From
-  body       String // full raw text — evidence of record
-  hash       String   @unique // sha256 fingerprint; identical message = one row
-  receivedAt DateTime @default(now())
-  processed  Boolean  @default(false)
+  id               String   @id @default(cuid())
+  merchantId       String
+  merchant         Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  deviceId         String? // which paired device delivered it (null for email/IMAP)
+  source           String // PUSH | SMS | EMAIL
+  sender           String? // sender ID / package name / email From
+  body             String // full raw text — evidence of record
+  hash             String // sha256 fingerprint; unique per merchant
+  receivedAt       DateTime @default(now()) // device-reported capture time
+  serverReceivedAt DateTime @default(now()) // when the server actually accepted it
+  processed        Boolean  @default(false)
 
   transactions ParsedTransaction[]
+
+  @@unique([merchantId, hash])
+  @@index([merchantId, receivedAt])
 }
 
 // Parser output for one alert (0..1 per alert), the thing the matcher consumes.

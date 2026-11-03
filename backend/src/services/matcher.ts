@@ -3,16 +3,23 @@
  *
  * Invariants:
  *  - Only CREDIT evidence can confirm.
+ *  - Only VERIFIED evidence can auto-confirm. `verified` means the parser saw
+ *    a known business-app package (GPay Business, PhonePe, Paytm, …) or a real
+ *    bank sender ID (HDFCBK, SBIINB, ICICIB, AXISBK, …). Unknown senders are
+ *    kept as evidence and routed to REVIEW — never PAID.
  *  - Amount must equal an OPEN order's amountPaise exactly (allocator
- *    guarantees consumidores can't collide).
+ *    guarantees consumers can't collide).
  *  - Evidence must belong to the merchant who owns the order (device is
  *    bound to merchant at ingest time).
- *  - Match window: alert time ∈ [order.createdAt, createdAt + lateMatchMinutes].
+ *  - Match window: device capture time ∈ [order.createdAt,
+ *    createdAt + lateMatchMinutes]. The device timestamp is bounded: it may not
+ *    be in the future, and `paidAt` is always the server's clock.
  *  - Race-safe: the order row is claimed with a conditional updateMany,
  *    so double-confirmations collapse into one winner.
  */
-import { createHash, createHmac } from "node:crypto";
+import { createHash } from "node:crypto";
 import { prisma } from "../db.js";
+import { deliverWebhook } from "../lib/webhook.js";
 import { parseAlert } from "./parser.js";
 
 export interface IngestMessage {
@@ -26,8 +33,8 @@ export type MatchOutcome =
   | "matched"
   | "duplicate" // identical alert fingerprint already stored
   | "ignored" // not credit / not parseable
-  | "review" // credit, but merchant policy wants eyes on it
-  | "unmatched"; // credit, no fitting open order
+  | "review" // credit, but unverified or merchant policy wants eyes on it
+  | "unmatched"; // verified credit, no fitting open order
 
 export interface ProcessedMessage {
   outcome: MatchOutcome;
@@ -35,8 +42,23 @@ export interface ProcessedMessage {
   ruleKey?: string;
 }
 
+const MAX_FUTURE_SKEW_MS = 5 * 60_000;
+
 function sha256(input: string): string {
   return createHash("sha256").update(input).digest("hex");
+}
+
+/**
+ * Device clocks drift and phones go offline; accept a capture time up to the
+ * late-match window old, but never a future time (that would let a device
+ * pre-date an order). Returns null when the timestamp is nonsense.
+ */
+function eventTime(raw: string | undefined, now: Date): Date | null {
+  if (!raw) return now;
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return null;
+  if (parsed.getTime() > now.getTime() + MAX_FUTURE_SKEW_MS) return null;
+  return parsed.getTime() > now.getTime() ? now : parsed;
 }
 
 export async function processIngestMessage(
@@ -44,11 +66,17 @@ export async function processIngestMessage(
   deviceId: string,
   msg: IngestMessage,
 ): Promise<ProcessedMessage> {
+  const now = new Date();
   const sender = msg.sender ?? null;
   const body = msg.body.slice(0, 4000);
-  const fingerprint = sha256(`${msg.source}|${sender ?? ""}|${body.trim()}`);
-  const receivedAt = msg.receivedAt ? new Date(msg.receivedAt) : new Date();
-  if (Number.isNaN(receivedAt.getTime())) return { outcome: "ignored" };
+  const capturedAt = eventTime(msg.receivedAt, now);
+  if (capturedAt == null) return { outcome: "ignored" };
+
+  // Merchant-scoped fingerprint: the same bank text must never suppress
+  // another merchant's alert (Phase 1 global-unique bug).
+  const fingerprint = sha256(
+    `${merchantId}|${msg.source}|${sender ?? ""}|${body.trim()}`,
+  );
 
   let alert;
   try {
@@ -60,11 +88,16 @@ export async function processIngestMessage(
         sender,
         body,
         hash: fingerprint,
+        receivedAt: capturedAt,
+        serverReceivedAt: now,
       },
     });
-  } catch {
-    // Unique hash hit — identical alert replayed across lanes/reboots.
-    return { outcome: "duplicate" };
+  } catch (e) {
+    // Unique (merchantId, hash) hit — identical alert replayed across lanes.
+    if ((e as { code?: string } | null)?.code === "P2002") {
+      return { outcome: "duplicate" };
+    }
+    throw e;
   }
 
   const parsed = parseAlert({ source: msg.source, sender, body });
@@ -92,6 +125,16 @@ export async function processIngestMessage(
     },
   });
 
+  // Unverified evidence is recorded but never auto-confirms.
+  if (!parsed.verified) {
+    await prisma.parsedTransaction.update({
+      where: { id: parsedTxn.id },
+      data: { status: "REVIEW" },
+    });
+    await prisma.paymentAlert.update({ where: { id: alert.id }, data: { processed: true } });
+    return { outcome: "review", ruleKey: parsed.ruleKey };
+  }
+
   const merchant = await prisma.merchant.findUnique({ where: { id: merchantId } });
   if (!merchant) return { outcome: "ignored", ruleKey: parsed.ruleKey };
 
@@ -108,7 +151,7 @@ export async function processIngestMessage(
   const order = await findOpenOrderFor(
     merchantId,
     parsed.amountPaise,
-    receivedAt,
+    capturedAt,
     merchant.lateMatchMinutes,
   );
   if (!order) return { outcome: "unmatched", ruleKey: parsed.ruleKey };
@@ -118,7 +161,7 @@ export async function processIngestMessage(
     where: { id: order.id, status: "PENDING" },
     data: {
       status: "PAID",
-      paidAt: receivedAt,
+      paidAt: now, // server clock — never the device's
       confirmedSource: msg.source,
     },
   });
@@ -126,7 +169,7 @@ export async function processIngestMessage(
 
   await prisma.parsedTransaction.update({
     where: { id: parsedTxn.id },
-    data: { matchedOrderId: order.id, status: "MATCHED", matchedAt: receivedAt },
+    data: { matchedOrderId: order.id, status: "MATCHED", matchedAt: now },
   });
   await prisma.paymentAlert.update({ where: { id: alert.id }, data: { processed: true } });
 
@@ -138,7 +181,8 @@ export async function processIngestMessage(
     utr: parsed.utr,
     payerHint: parsed.payerHint,
     source: msg.source,
-    paidAt: receivedAt.toISOString(),
+    ruleKey: parsed.ruleKey,
+    paidAt: now.toISOString(),
   });
 
   return { outcome: "matched", orderRef: order.ref, ruleKey: parsed.ruleKey };
@@ -163,7 +207,10 @@ async function findOpenOrderFor(
   );
 }
 
-/** Fire-and-forget, HMAC-signed `order.paid` notification. */
+/**
+ * Fire-and-forget, HMAC-signed `order.paid` notification. The URL is SSRF
+ * checked (HTTPS/public hosts only) and redirects are never followed.
+ */
 function fireMerchantWebhook(
   merchant: {
     webhookUrl: string | null;
@@ -172,17 +219,5 @@ function fireMerchantWebhook(
   payload: Record<string, unknown>,
 ): void {
   if (!merchant.webhookUrl || !merchant.webhookSecret) return;
-  const body = JSON.stringify(payload);
-  const signature = createHmac("sha256", merchant.webhookSecret).update(body).digest("hex");
-  fetch(merchant.webhookUrl, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-paidsure-signature": `sha256=${signature}`,
-    },
-    body,
-    signal: AbortSignal.timeout(5000),
-  }).catch((e) => {
-    console.warn("[paidsure] webhook delivery failed", (e as Error)?.message);
-  });
+  void deliverWebhook(merchant.webhookUrl, merchant.webhookSecret, payload);
 }
