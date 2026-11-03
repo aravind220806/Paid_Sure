@@ -13,11 +13,14 @@ import QRCode from "qrcode";
 interface OrderView {
   ref: string;
   status: string;
+  checkoutExpired: boolean;
   amountPaise: number;
+  extraPaise: number;
   payeeName: string;
   storeName: string;
   intentUrl: string | null;
   expiresAt: string | null;
+  matchableUntil: string | null;
   confirmedSource: string | null;
   paidAt: string | null;
   utr: string | null;
@@ -41,7 +44,7 @@ export default function StatusPage({ refId }: { refId: string }) {
   const [order, setOrder] = useState<OrderView | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [qr, setQr] = useState<string | null>(null);
-  const extraPaise = order ? order.amountPaise % 100 : 0;
+  const extraPaise = order?.extraPaise ?? 0;
 
   // Initial load
   useEffect(() => {
@@ -58,20 +61,39 @@ export default function StatusPage({ refId }: { refId: string }) {
     };
   }, [refId]);
 
-  // Live updates: SSE first, polling as fallback
+  const status = order?.status ?? null;
+  const isPaid = status === "PAID";
+  const isExpired = status === "EXPIRED" || order?.checkoutExpired === true;
+  const isPending = status === "PENDING";
+  const matchableUntilMs = order?.matchableUntil
+    ? new Date(order.matchableUntil).getTime()
+    : null;
+  const lateWindowOpen = matchableUntilMs != null && matchableUntilMs > Date.now();
+  // Keep watching while the order is still PENDING in the database — including
+  // after the checkout countdown ends — until the late-match window closes.
+  const shouldWatch =
+    order != null &&
+    order.status === "PENDING" &&
+    (matchableUntilMs == null || lateWindowOpen);
+
+  // Live updates: SSE while the checkout is open, polling as fallback and
+  // after expiry until the late-match window closes.
   useEffect(() => {
-    if (!order || order.status !== "PENDING") return;
+    if (!order || !shouldWatch) return;
     let cancelled = false;
-    const source = new EventSource(`/api/orders/${encodeURIComponent(refId)}/events`);
+    let source: EventSource | null = null;
     const apply = (json: { status: string; paidAt: string | null }) =>
       setOrder((o) => (o ? { ...o, status: json.status, paidAt: json.paidAt ?? o.paidAt } : o));
-    source.addEventListener("status", (e) => {
-      try {
-        apply(JSON.parse((e as MessageEvent).data));
-      } catch {
-        /* ignore malformed frames */
-      }
-    });
+    if (order.status === "PENDING") {
+      source = new EventSource(`/api/orders/${encodeURIComponent(refId)}/events`);
+      source.addEventListener("status", (e) => {
+        try {
+          apply(JSON.parse((e as MessageEvent).data));
+        } catch {
+          /* ignore malformed frames */
+        }
+      });
+    }
     // Fallback poll in case SSE is buffered/disconnected by a proxy
     const poll = window.setInterval(() => {
       fetch(`/api/orders/${encodeURIComponent(refId)}`)
@@ -82,10 +104,10 @@ export default function StatusPage({ refId }: { refId: string }) {
     return () => {
       cancelled = true;
       window.clearInterval(poll);
-      source.close();
+      source?.close();
       void cancelled;
     };
-  }, [order?.status, refId]);
+  }, [order?.status, refId, shouldWatch]);
 
   // QR for the intent payload
   useEffect(() => {
@@ -98,11 +120,6 @@ export default function StatusPage({ refId }: { refId: string }) {
       .then((dataUrl) => setQr(dataUrl))
       .catch(() => setQr(null));
   }, [order?.intentUrl]);
-
-  const status = order?.status ?? null;
-  const isPaid = status === "PAID";
-  const isExpired = status === "EXPIRED";
-  const isPending = status === "PENDING";
 
   const minutesLeft = (() => {
     if (!order?.expiresAt) return null;
@@ -132,14 +149,14 @@ export default function StatusPage({ refId }: { refId: string }) {
             <>
               <span className="live-dot live-dot--pulse" /> Connecting…
             </>
-          ) : isPending ? (
-            <>
-              <span className="live-dot live-dot--pulse" /> Awaiting payment
-            </>
           ) : isPaid ? (
             <>✅ Payment verified</>
           ) : isExpired ? (
             <>⏳ Payment window closed</>
+          ) : isPending ? (
+            <>
+              <span className="live-dot live-dot--pulse" /> Awaiting payment
+            </>
           ) : (
             <>Status: {status}</>
           )}
@@ -185,7 +202,18 @@ export default function StatusPage({ refId }: { refId: string }) {
             </div>
           </div>
 
-          {qr != null ? (
+          {isExpired ? (
+            <div
+              className="row"
+              style={{ flexDirection: "column", gap: 12, paddingTop: 24, paddingBottom: 24 }}
+            >
+              <span style={{ color: "var(--text-3)", fontSize: 14, textAlign: "center" }}>
+                {lateWindowOpen
+                  ? "Payment window closed. If you already paid, verification can still arrive — keep this page open."
+                  : "Payment window closed. Ask the seller for a fresh payment link."}
+              </span>
+            </div>
+          ) : qr != null ? (
             <div
               className="row"
               style={{ flexDirection: "column", gap: 12, paddingTop: 24, paddingBottom: 24 }}
@@ -219,14 +247,16 @@ export default function StatusPage({ refId }: { refId: string }) {
                     order.paidAt,
                   ).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}${order.utr ? ` · UTR ${order.utr}` : ""}`
                 : isExpired
-                  ? "Ask the seller for a fresh payment link."
+                  ? lateWindowOpen
+                    ? "If you already paid, verification can still arrive — keep this page open."
+                    : "Ask the seller for a fresh payment link."
                   : minutesLeft != null
                     ? `Auto-confirmation runs while this stays open · expires in ${minutesLeft} min`
                     : "Live status — the page updates by itself"}
             </span>
             <span style={{ flex: 1 }} />
             {isPaid && <span className="chip chip--paid">Paid</span>}
-            {isPending && <span className="chip chip--waiting">Waiting</span>}
+            {isPending && !isExpired && <span className="chip chip--waiting">Waiting</span>}
           </div>
         </div>
       )}

@@ -69,7 +69,8 @@ model Order {
   merchantId      String
   merchant        Merchant  @relation(fields: [merchantId], references: [id], onDelete: Cascade)
   ref             String    @unique // human ref, e.g. "PS-000421"
-  amountPaise     Int // unique among this merchant's OPEN orders (allocator guarantees it)
+  amountPaise     Int // unique among this merchant's open/safety-window orders
+  baseAmountPaise Int       @default(0) // product total before the 0–300 paise fingerprint
   status          String    @default("PENDING")
   note            String? // shown to the customer in the UPI app
   customerName    String?
@@ -86,6 +87,7 @@ model Order {
   @@index([merchantId, status])
   @@index([merchantId, amountPaise])
   @@index([merchantId, createdAt])
+  @@index([merchantId, status, createdAt])
 }
 
 // Raw capture as it arrived (SMS text or notification text), kept as evidence.

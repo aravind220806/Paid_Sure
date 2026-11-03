@@ -19,13 +19,13 @@ export function toPaise(amount: number): number {
   return paise;
 }
 
-/** Combine a whole-rupee base with a 0–99 paise suffix: 499 + 37 → 49937 paise. */
+/** Combine a whole-rupee base with a 0–300 paise fingerprint offset: 499 + 37 → 49937 paise. */
 export function paiseSuffix(baseRupees: number, suffix: number): number {
   if (!Number.isInteger(baseRupees) || baseRupees <= 0) {
     throw new RangeError("baseRupees must be a positive integer");
   }
-  if (!Number.isInteger(suffix) || suffix < 0 || suffix > 99) {
-    throw new RangeError("suffix must be an integer 0–99");
+  if (!Number.isInteger(suffix) || suffix < 0 || suffix > 300) {
+    throw new RangeError("suffix must be an integer 0–300 (₹3.00 max)");
   }
   return baseRupees * 100 + suffix;
 }

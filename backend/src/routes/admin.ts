@@ -10,6 +10,7 @@ import { randomBytes } from "node:crypto";
 import { z } from "zod";
 import { config } from "../config.js";
 import { prisma } from "../db.js";
+import { asyncRoute } from "../lib/asyncRoute.js";
 import { sha256 } from "../auth.js";
 
 const merchantSchema = z.object({
@@ -35,7 +36,7 @@ function adminGuarded(req: Request, res: Response): boolean {
 
 export const adminRouter = Router();
 
-adminRouter.post("/merchants", async (req, res) => {
+adminRouter.post("/merchants", asyncRoute(async (req, res) => {
   if (!adminGuarded(req, res)) return;
   const parsed = merchantSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -63,9 +64,9 @@ adminRouter.post("/merchants", async (req, res) => {
     apiKey, // shown once — only the hash is stored
     webhookSecret, // shown once — merchant pastes this into their backend
   });
-});
+}));
 
-adminRouter.post("/merchants/:slug/devices", async (req, res) => {
+adminRouter.post("/merchants/:slug/devices", asyncRoute(async (req, res) => {
   if (!adminGuarded(req, res)) return;
   const parsed = deviceSchema.safeParse(req.body ?? {});
   if (!parsed.success) {
@@ -94,4 +95,4 @@ adminRouter.post("/merchants/:slug/devices", async (req, res) => {
     device,
     pairToken: token, // shown once — only the hash is stored on the server
   });
-});
+}));

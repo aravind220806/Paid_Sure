@@ -15,11 +15,12 @@ describe("money helpers", () => {
     expect(() => toPaise(Number.POSITIVE_INFINITY)).toThrow(TypeError);
   });
 
-  it("builds the unique paise amount from base + suffix", () => {
+  it("builds the unique fingerprint amount from base + offset", () => {
     expect(paiseSuffix(499, 37)).toBe(49937);
     expect(paiseSuffix(1000, 0)).toBe(100000);
+    expect(paiseSuffix(998, 300)).toBe(100100); // ₹3.00 max
     expect(() => paiseSuffix(499.5, 1)).toThrow(RangeError);
-    expect(() => paiseSuffix(499, 100)).toThrow(RangeError);
+    expect(() => paiseSuffix(499, 301)).toThrow(RangeError);
   });
 
   it("formats paise for display", () => {

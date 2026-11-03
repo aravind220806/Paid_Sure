@@ -5,25 +5,45 @@
  *   GET  /api/orders/:ref/events — SSE live status
  */
 import { Router } from "express";
+import type { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { config } from "../config.js";
 import { prisma } from "../db.js";
+import { asyncRoute } from "../lib/asyncRoute.js";
 import { newOrderRef } from "../lib/refcode.js";
 import { buildUpiPayUrl, paiseToUpiAmount } from "../lib/upi.js";
-import { pickFreeSuffix } from "../services/allocator.js";
+import { allocateFingerprint } from "../services/orderAllocator.js";
 import {
   MerchantAuthedRequest,
   requireMerchant,
 } from "../auth.js";
 
 const createSchema = z.object({
-  /** Whole rupees ≥ 1. PaidSure adds the unique 0–99 paise fingerprint itself. */
+  /** Whole rupees ≥ 1. PaidSure adds the unique 0–₹3.00 paise fingerprint. */
   amount: z.number().int().min(1, "amount must be whole rupees ≥ 1").max(1_00_000),
   note: z.string().max(120).optional(),
   customerName: z.string().max(80).optional(),
 });
 
 class AllocationFailedError extends Error {}
+
+/**
+ * SQLite allows only one writer. Interactive transactions that overlap can
+ * deadlock on a read→write upgrade, so dev/test order creation is serialized
+ * in-process. PostgreSQL runs fully concurrently (the partial unique index
+ * plus retry is the guard).
+ */
+let sqliteWriteQueue: Promise<unknown> = Promise.resolve();
+
+function withWriteLock<T>(task: () => Promise<T>): Promise<T> {
+  if (!process.env.DATABASE_URL?.startsWith("file:")) return task();
+  const run = sqliteWriteQueue.then(task, task);
+  sqliteWriteQueue = run.then(
+    () => undefined,
+    () => undefined,
+  );
+  return run;
+}
 
 export const ordersRouter = Router();
 
@@ -33,7 +53,7 @@ const statusUrlFor = (ref: string): string =>
 ordersRouter.post(
   "/",
   requireMerchant,
-  async (req, res) => {
+  asyncRoute(async (req, res) => {
     const body = createSchema.safeParse(req.body);
     if (!body.success) {
       res.status(400).json({ ok: false, error: "invalid_body" });
@@ -41,96 +61,142 @@ ordersRouter.post(
     }
     const { amount, note, customerName } = body.data;
     const merchant = (req as MerchantAuthedRequest).merchant;
+    const basePaise = amount * 100;
 
-    let amountPaise: number;
+    let created: CreatedOrder;
     try {
-      amountPaise = await allocate(merchant.id, amount);
+      created = await createOrderWithFingerprint(merchant, basePaise, note, customerName);
     } catch (e) {
       if (e instanceof AllocationFailedError) {
+        res.set("Retry-After", "60");
         res.status(503).json({
           ok: false,
-          error: "amount_space_exhausted",
-          message: "All 300 unique-amount variants for this rupee total are in use by open orders. Close or expire some open orders first.",
+          error: "fingerprint_space_exhausted",
+          message:
+            "High demand for this price. All 301 payment identifiers are in use by orders still inside the safety window. Please retry in a minute.",
         });
         return;
       }
       throw e;
     }
 
-    const ref = await allocateRef();
-    const upiNote = note ? `${note} · ${ref}` : `Order ${ref}`;
-    const intentUrl = buildUpiPayUrl(
-      { vpa: merchant.vpa, payeeName: merchant.payeeName },
-      amountPaise,
-      upiNote,
-    );
-
-    const order = await prisma.order.create({
-      data: {
-        merchantId: merchant.id,
-        ref,
-        amountPaise,
-        intentUrl,
-        qrPayload: intentUrl,
-        note: note ?? null,
-        customerName: customerName ?? null,
-        expiresAt: new Date(Date.now() + merchant.confirmWindowMin * 60_000),
-      },
-      select: { id: true, createdAt: true, expiresAt: true },
-    });
-
     res.status(201).json({
       ok: true,
       order: {
-        ref,
+        ref: created.ref,
         status: "PENDING",
-        amountPaise,
-        amount: paiseToUpiAmount(amountPaise),
+        amountPaise: created.amountPaise,
+        amount: paiseToUpiAmount(created.amountPaise),
         baseAmount: amount,
-        intentUrl,
-        statusUrl: statusUrlFor(ref),
-        expiresAt: order.expiresAt?.toISOString() ?? null,
+        baseAmountPaise: basePaise,
+        extraPaise: created.extraPaise,
+        intentUrl: created.intentUrl,
+        statusUrl: statusUrlFor(created.ref),
+        expiresAt: created.order.expiresAt?.toISOString() ?? null,
         store: { name: merchant.name, payeeName: merchant.payeeName, slug: merchant.slug },
       },
     });
-  },
+  }),
 );
 
-async function allocate(merchantId: string, rupees: number): Promise<number> {
-  // Unique among OPEN orders for this merchant. Strategy: for hop 0..2 try
-  // rupees + hop (whole-rupee shift happens only when ~100 orders share the
-  // same rupee amount — rare; erroring out beats silently charging more).
-  for (let hop = 0; hop < 3; hop++) {
-    const base = rupees + hop;
-    const low = base * 100;
-    const rows = await prisma.order.findMany({
-      where: {
-        merchantId,
-        status: "PENDING",
-        amountPaise: { gte: low, lt: low + 100 },
-      },
-      select: { amountPaise: true },
-    });
-    const suffix = pickFreeSuffix(rows.map((r) => r.amountPaise - low));
-    if (suffix !== null) return low + suffix;
-  }
-  throw new AllocationFailedError();
+interface CreatedOrder {
+  ref: string;
+  amountPaise: number;
+  extraPaise: number;
+  intentUrl: string;
+  order: { id: string; createdAt: Date; expiresAt: Date | null };
 }
 
-async function allocateRef(): Promise<string> {
+/**
+ * Allocate the fingerprint and create the order in one DB transaction, then
+ * retry on a unique/index conflict. The partial unique index (created at boot)
+ * is the final guard against two concurrent requests taking the same amount.
+ */
+async function createOrderWithFingerprint(
+  merchant: MerchantAuthedRequest["merchant"],
+  basePaise: number,
+  note: string | undefined,
+  customerName: string | undefined,
+): Promise<CreatedOrder> {
+  for (let attempt = 0; attempt < 6; attempt++) {
+    try {
+      return await withWriteLock(() =>
+        prisma.$transaction(async (tx) => {
+          const choice = await allocateFingerprint(
+            tx,
+            merchant.id,
+            basePaise,
+            merchant.lateMatchMinutes,
+          );
+          if (choice === null) throw new AllocationFailedError();
+
+          const ref = await allocateRef(tx);
+          const upiNote = note ? `${note} · ${ref}` : `Order ${ref}`;
+          const intentUrl = buildUpiPayUrl(
+            { vpa: merchant.vpa, payeeName: merchant.payeeName },
+            choice.amountPaise,
+            upiNote,
+          );
+
+          const order = await tx.order.create({
+            data: {
+              merchantId: merchant.id,
+              ref,
+              amountPaise: choice.amountPaise,
+              baseAmountPaise: basePaise,
+              intentUrl,
+              qrPayload: intentUrl,
+              note: note ?? null,
+              customerName: customerName ?? null,
+              expiresAt: new Date(Date.now() + merchant.confirmWindowMin * 60_000),
+            },
+            select: { id: true, createdAt: true, expiresAt: true },
+          });
+
+          return {
+            ref,
+            amountPaise: choice.amountPaise,
+            extraPaise: choice.extraPaise,
+            intentUrl,
+            order,
+          };
+        }),
+      );
+    } catch (e) {
+      if (e instanceof AllocationFailedError) throw e;
+      if (!isRetryableAllocationError(e) || attempt === 5) throw e;
+      // Small backoff (with attempt-based spacing) avoids a thundering herd.
+      await new Promise((resolve) => setTimeout(resolve, 10 * (attempt + 1)));
+    }
+  }
+  throw new Error("unreachable");
+}
+
+function isRetryableAllocationError(error: unknown): boolean {
+  const code = (error as { code?: string } | null)?.code;
+  if (code === "P2002" || code === "P2034" || code === "P1008" || code === "P2028") {
+    return true;
+  }
+  const message = error instanceof Error ? error.message : String(error);
+  return /SQLITE_BUSY|database is locked|write conflict|deadlock/i.test(message);
+}
+
+async function allocateRef(db: Prisma.TransactionClient): Promise<string> {
   for (let attempt = 0; attempt < 5; attempt++) {
     const ref = newOrderRef();
-    const clash = await prisma.order.findUnique({ where: { ref } });
+    const clash = await db.order.findUnique({ where: { ref } });
     if (!clash) return ref;
   }
   return `PS-${Date.now().toString(36).toUpperCase().slice(-8)}`;
 }
 
-ordersRouter.get("/:ref", async (req, res) => {
+ordersRouter.get("/:ref", asyncRoute(async (req, res) => {
   const order = await prisma.order.findUnique({
     where: { ref: req.params.ref },
     include: {
-      merchant: { select: { name: true, payeeName: true, slug: true } },
+      merchant: {
+        select: { name: true, payeeName: true, slug: true, lateMatchMinutes: true },
+      },
       transactions: {
         where: { status: "MATCHED" },
         select: { utr: true, ruleKey: true, matchedAt: true },
@@ -142,26 +208,37 @@ ordersRouter.get("/:ref", async (req, res) => {
     res.status(404).json({ ok: false, error: "order_not_found" });
     return;
   }
-  const isExpired =
+  const checkoutExpired =
     order.status === "PENDING" && order.expiresAt != null && order.expiresAt < new Date();
+  // Older rows predate baseAmountPaise; their fingerprint was always < ₹1.
+  const baseAmountPaise =
+    order.baseAmountPaise > 0
+      ? order.baseAmountPaise
+      : order.amountPaise - (order.amountPaise % 100);
   res.json({
     ok: true,
     order: {
       ref: order.ref,
-      status: isExpired ? "EXPIRED" : order.status,
+      status: order.status,
+      checkoutExpired,
       amountPaise: order.amountPaise,
+      baseAmountPaise,
+      extraPaise: Math.max(0, order.amountPaise - baseAmountPaise),
       payeeName: order.merchant.payeeName,
       storeName: order.merchant.name,
       intentUrl: order.intentUrl,
       expiresAt: order.expiresAt?.toISOString() ?? null,
+      matchableUntil: new Date(
+        order.createdAt.getTime() + order.merchant.lateMatchMinutes * 60_000,
+      ).toISOString(),
       confirmedSource: order.confirmedSource,
       paidAt: order.paidAt?.toISOString() ?? null,
       utr: order.transactions[0]?.utr ?? null,
     },
   });
-});
+}));
 
-ordersRouter.get("/:ref/events", async (req, res) => {
+ordersRouter.get("/:ref/events", asyncRoute(async (req, res) => {
   const initial = await prisma.order.findUnique({ where: { ref: req.params.ref } });
   if (!initial) {
     res.status(404).json({ ok: false, error: "order_not_found" });
@@ -191,13 +268,19 @@ ordersRouter.get("/:ref/events", async (req, res) => {
   };
 
   await emit();
-  const poll = setInterval(async () => {
-    const done = await emit();
-    if (done) {
-      clearInterval(poll);
-      res.write("event: end\ndata: {}\n\n");
-      res.end();
-    }
+  const poll = setInterval(() => {
+    emit()
+      .then((done) => {
+        if (!done) return;
+        clearInterval(poll);
+        res.write("event: end\ndata: {}\n\n");
+        res.end();
+      })
+      .catch((error) => {
+        console.error("[paidsure] SSE status stream failed", error);
+        clearInterval(poll);
+        res.end();
+      });
   }, 2000);
   req.on("close", () => clearInterval(poll));
-});
+}));

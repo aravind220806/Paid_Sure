@@ -9,6 +9,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../db.js";
+import { asyncRoute } from "../lib/asyncRoute.js";
 import { DeviceAuthedRequest, requireDevice } from "../auth.js";
 import { processIngestMessage } from "../services/matcher.js";
 
@@ -34,7 +35,7 @@ export const ingestRouter = Router();
 ingestRouter.post(
   "/",
   requireDevice,
-  async (req, res) => {
+  asyncRoute(async (req, res) => {
     const body = ingestSchema.safeParse(req.body);
     if (!body.success) {
       res.status(400).json({ ok: false, error: "invalid_body" });
@@ -69,5 +70,5 @@ ingestRouter.post(
       results,
       matchedOrderRef: matched?.orderRef ?? null,
     });
-  },
+  }),
 );

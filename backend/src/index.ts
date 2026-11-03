@@ -1,10 +1,12 @@
 import express, { type Express, type NextFunction, type Request, type Response } from "express";
 import cors from "cors";
 import { allowedOrigins, config } from "./config.js";
+import { ensureOrderConstraints } from "./db.js";
 import { healthRouter } from "./routes/health.js";
 import { ordersRouter } from "./routes/orders.js";
 import { ingestRouter } from "./routes/ingest.js";
 import { adminRouter } from "./routes/admin.js";
+import { startOrderSweeper, sweepExpiredOrders } from "./services/orderSweeper.js";
 
 const app: Express = express();
 
@@ -49,8 +51,21 @@ app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
   res.status(500).json({ ok: false, error: "internal_error" });
 });
 
-app.listen(config.PORT, () => {
-  console.log(
-    `[paidsure] backend up on http://localhost:${config.PORT} (${config.NODE_ENV})`,
-  );
+async function bootstrap(): Promise<void> {
+  await ensureOrderConstraints();
+  await sweepExpiredOrders().catch((error) => {
+    console.error("[paidsure] initial order sweep failed", error);
+  });
+  startOrderSweeper();
+  app.listen(config.PORT, () => {
+    console.log(
+      `[paidsure] backend up on http://localhost:${config.PORT} (${config.NODE_ENV})`,
+    );
+    console.log("[paidsure] fingerprint safeguards active (index, sweeper)");
+  });
+}
+
+bootstrap().catch((error) => {
+  console.error("[paidsure] startup safeguard failed", error);
+  process.exit(1);
 });

@@ -32,7 +32,7 @@ PaidSure is a **UPI payment gateway made for small online product sellers**: you
 | 🌐 **Integration** | Paste one link/button, or call one REST API. Works with any site builder, WordPress, or custom code — any stack. |
 | 🏦 **Money** | It's your bank account, not ours. Nothing is held back for days: the customer's payment *is* your money, immediately. |
 | 🔐 **Trust** | A sale is finalized only after the credit is verified from payment evidence (UTR, amount, channel) — never from the customer's screen. |
-| 🔢 **Matching** | Every open order gets its own paise fingerprint (₹998.26), so simultaneous payments can never be confused. The ≤₹0.99 identifier is part of the payment, not a fee. |
+| 🔢 **Matching** | Every open order gets its own paise fingerprint (₹998.26) — automatically widened up to ₹3.00 when traffic is heavy, so simultaneous payments can never be confused. The identifier is part of the payment, not a fee. |
 | 🛒 **Product-aware** | *(Phase 2)* Sync your product list once and every cart fills with the correct names and rates automatically — no manual amounts again. |
 | 🇮🇳 **Built for** | Small online product sellers in India — the audience the big gateways price out. |
 
@@ -89,7 +89,7 @@ PaidSure is a **UPI payment gateway made for small online product sellers**: you
 | 📝 Signing up | **Your UPI ID is the merchant account. No PaidSure-owned account exists** |
 | 🌐 Integration | **One pasted link/button, or one API call — your choice** |
 | 🎭 Fake screenshots | **Worthless. Only verified credit evidence on the paired phone finalizes an order** |
-| 🔢 Amounts | **Every open order gets its own paise fingerprint (₹998.26) — no two open orders can share an amount, so every credit maps to exactly one order** |
+| 🔢 Amounts | **Every open order gets its own paise fingerprint (₹998.26), auto-widening up to ₹3.00 at busy times — no two open orders can share an amount, so every credit maps to exactly one order** |
 | 🧾 Prices in the cart | *(Phase 2)* **Synced from your catalog — rates are computed server-side, customers can't edit them** |
 | 📜 Open source | **MIT. Self-host the whole gateway on your own machine for free, forever** |
 
@@ -169,7 +169,7 @@ Raw SMS/push, UTR, VPA and channel stored per payment. Unmatched credits are nev
 
 Every order passes through four steps:
 
-1. **Your website creates the order.** One call to `POST /api/orders` returns the amount with a unique paise fingerprint (₹998.**26**), a `upi://` redirect link, a QR and a hosted live-status page. *(No code? Paste a checkout link instead.)*
+1. **Your website creates the order.** One call to `POST /api/orders` returns the amount with a unique paise fingerprint (₹998.**26**; the identifier widens automatically, up to ₹3.00, on busy days), a `upi://` redirect link, a QR and a hosted live-status page. *(No code? Paste a checkout link instead.)*
 2. **The customer pays.** Your site redirects them — or shows the QR — and any UPI app (GPay, PhonePe, Paytm) opens pre-filled with the amount. They return to your site.
 3. **The payment self-reports.** Your paired capture phone collects the credit evidence: business-app push, bank SMS or bank email. *(The ~1–3 s fast lane needs a UPI business app with its payment notifications ON — see [What you need](#-what-you-need). SMS/email keep working without it.)*
 4. **PaidSure verifies and you finalize.** A unique-amount match marks the order PAID with evidence stored (UTR, VPA, channel); your backend reads the status (REST) or the webhook/SSE and ships the product.
@@ -217,7 +217,18 @@ PaidSure solves this with a **paisa fingerprint**: a tiny, private amount added 
 
 ### 💡 Our solution: every order gets its own private paise
 
-Each order gets a unique amount, using **0–99 paise** added to the product price:
+Each order gets a unique amount built from the product price plus a small **paisa fingerprint**. The range grows automatically with traffic:
+
+| Traffic | Fingerprint range | Example on a ₹998 product |
+|---|---|---|
+| Normal | **₹0.00–₹0.99** | ₹998.26 |
+| Busy | **₹1.00–₹1.99** | ₹999.04 |
+| Peak | **₹2.00–₹3.00** | ₹1000.58 |
+
+That is **301 different amounts at the same price point** (₹998.00 through ₹1001.00), each one unique for that merchant inside the safety window. The allocator always fills the cheapest band first, so a quiet shop only adds ₹0–₹0.99. When the cheap band is full, it opens the next one automatically — no setting to change and no redeploy.
+
+> [!NOTE]
+> Prices within ₹3 of each other share part of the same paise space, so 301 is the maximum for one isolated price — not 301 for every product at once. The allocator sees the overlap and will never reuse an amount; nearby price points simply consume the shared slots.
 
 | Order | Product price | Amount the customer pays | What the bank alert says | Which order it confirms |
 |---|---|---|---|---|
@@ -225,39 +236,55 @@ Each order gets a unique amount, using **0–99 paise** added to the product pri
 | `PS-000422` | ₹998 | **₹998.71** | "Rs 998.71 credited…" | ✅ only `PS-000422` |
 | `PS-000423` | ₹998 | **₹998.08** | "Rs 998.08 credited…" | ✅ only `PS-000423` |
 
-Two **open** orders at the same shop can never share an amount. So when a credit arrives, the matcher asks one simple question:
+No two orders at the same shop may share an amount inside the safety window. So when a credit arrives, the matcher asks one simple question:
 
-> **"Which open order has exactly this amount in paise?"**
+> **"Which order has exactly this amount in paise?"**
 
 If exactly one does → that order becomes **PAID**, with the bank evidence attached. No guessing, no name matching, no screenshots.
 
 > [!IMPORTANT]
 > **The extra paise is not a fee.** It is part of the payment and lands in the seller's account with the rest. Think of it as the order number written on the envelope: ₹998.26 is "the ₹998 order with tag 26". The hosted checkout always shows the final amount before the customer pays, so nobody is surprised.
 
-**For non-technical sellers:** the customer pays ₹998.26 instead of ₹998.00. The ₹0.26 identifies the order and reaches your bank account — PaidSure never keeps it.
+**For non-technical sellers:** the customer pays ₹998.26 instead of ₹998.00. The ₹0.26 identifies the order and reaches your bank account — PaidSure never keeps it. On a busy day the identifier can grow to at most ₹3.00, and the checkout always shows the exact amount before payment.
 
 ### 🧮 How the fingerprint is chosen (for developers)
 
 For every new order:
 
 1. Convert the product total to paise: ₹998 → `99800`.
-2. Find all **PENDING** orders for this merchant with the same base amount.
-3. Pick a suffix from `0…99` that no open order is using (for example `26`).
-4. Store `amountPaise = 99826` and build the UPI link with `am=998.26`.
-5. If all 100 suffixes are taken, move the base up by ₹1 (₹999.xx) and repeat — up to 3 hops. If even that is full, reject the order with a clear error instead of risking a duplicate amount.
+2. Find every order for this merchant whose amount falls between `basePaise` and `basePaise + 300` and is still inside the safety window (open, or recently paid/closed — see below).
+3. Pick a free offset, cheapest band first: `0…99`, then `100…199`, then `200…300`. The next band is enabled as pressure rises (above 80 and 180 occupied slots), so a burst never needs a config change — but the allocator never makes a customer pay more while a cheaper tag is free.
+4. Store `amountPaise = base + offset`, `baseAmountPaise = base` and `extraPaise = offset`; build the UPI link with `am=998.26`.
+5. If all **301** offsets are taken, return a clean `503 fingerprint_space_exhausted` with `Retry-After: 60`. Never reuse an amount.
 
 ```
-₹998.00 base
-   ├── 998.00  ← order 1
-   ├── 998.01  ← order 2
-   ├── ...
-   ├── 998.99  ← order 100
-   └── all 100 taken? → ₹999.00…₹999.99 (the next 100 suffixes)
+₹998.00 base → 301 possible amounts
+  0…99     ₹998.00 – ₹998.99    normal traffic
+100…199   ₹999.00 – ₹999.99    busy traffic
+200…300   ₹1000.00 – ₹1001.00  peak traffic
 ```
 
-When a credit arrives, the matcher parses the amount from the bank evidence and looks for **one** PENDING order with that exact `amountPaise`, created within the match window. The claim is a single atomic update, so if two messages arrive together, only one can win.
+**Worked example.** 105 simultaneous orders at ₹998:
 
-**Concurrency hardening (next build item):** allocation and order creation currently happen in two steps. Production will wrap them in one transaction, add a partial unique index on `(merchantId, amountPaise)` for `PENDING` orders, and retry on conflict. That makes "no two open orders share an amount" a database guarantee, not just an allocator promise.
+- the first 100 get ₹998.00–₹998.99
+- the next 5 get ₹999.00–₹999.04
+- at 301 orders the whole range is in use; the 302nd gets `503` instead of a duplicate amount
+
+**Why stop at ₹3.00?** It is the largest identifier that still reads as small change on a normal product price. A bigger range would look like a surcharge, create refund questions, and fall hardest on low-priced items. 301 slots cover a small seller's realistic burst at one price. If a shop regularly needs more, the right next step is another receiving VPA or a queue — not silently charging more. Both are future work, not shipped features.
+
+### 🔒 Why an amount is not reused immediately
+
+A fingerprint's job does not end when the order is paid. A bank can deliver the same credit twice, a customer can pay late, or a second payment can arrive after the first. If the amount were freed immediately, that duplicate could confirm a different order — and the seller would ship goods that were never paid for.
+
+So every amount stays reserved:
+
+- A **PENDING** order holds its amount for the merchant's late-match window (`lateMatchMinutes`, default **12 hours**).
+- A sweeper closes it after that window, so old checkout links stop blocking capacity forever.
+- A **paid or closed** order's amount stays reserved for another 12 hours after its last update, giving late and duplicate credits a full safety buffer before reuse.
+
+In practice an expired order's amount becomes reusable roughly 24 hours after creation: 12 hours open plus 12 hours retired. A paid order's amount is held for 12 hours after payment. In exchange, a duplicate credit can never silently confirm a new order.
+
+**Database guarantee.** Allocation and order creation run in one transaction. A partial unique index on `(merchantId, amountPaise)` for `PENDING` orders catches any race that slips through, and the API retries with a fresh pick. SQLite (dev) serialises order writes in-process because it allows only one writer; PostgreSQL (production) runs concurrently. A PostgreSQL load test is still on the checklist — the SQLite path is stress-tested with 301 live orders, 20 parallel creates and duplicate-credit replay.
 
 ### 🧾 What happens in the real world
 
@@ -266,16 +293,18 @@ When a credit arrives, the matcher parses the amount from the bank evidence and 
 | 50 people pay at the same second | 50 different amounts → 50 messages → each matches exactly one order |
 | Two different shops use ₹998.26 | No conflict — matching is scoped to the merchant whose phone captured the credit |
 | The same bank SMS arrives twice | Dedupe fingerprint → the second copy is ignored; the order stays paid once |
-| A customer pays twice for one order | The first credit confirms it; the second matches no open order → **unmatched ledger**, visible for refund |
-| A customer ignores the link and pays ₹998.00 | No open order has that exact amount → **unmatched ledger**; the merchant assigns or refunds it manually |
+| A customer pays twice for one order | The first credit confirms it; the second matches no open order → **unmatched ledger**, visible for refund. The amount stays reserved, so it cannot confirm a new order |
+| A customer ignores the link and pays a round ₹998.00 | Matches only if ₹998.00 is that order's assigned fingerprint (offset 0). Otherwise it goes to the **unmatched ledger** for manual assignment or refund |
 | A payment arrives hours late | The late-match window still links it for **12 hours** |
-| 100 orders at ₹998 are open at once | All 100 suffixes are used; the 101st moves to ₹999.xx automatically |
+| 100 orders at ₹998 are open at once | All 100 cheap tags are used; the 101st moves to ₹999.xx automatically |
+| 301 orders at ₹998 are open at once | The full ₹998.00–₹1001.00 range is used; the 302nd gets a clean `503`, never a duplicate amount |
+| A paid order is followed by a duplicate credit | The amount is still retired, so the duplicate cannot confirm a new order |
 
 ### 🤔 Why not match by payer name or a screenshot?
 
 | Signal | Can it confirm a payment? | Why |
 |---|---|---|
-| **Paisa fingerprint** | ✅ Yes | Chosen by us, unique among open orders, and present in every bank credit |
+| **Paisa fingerprint** | ✅ Yes | Chosen by us, unique among all orders inside the safety window, and present in every bank credit |
 | Payer name | ⚠️ No, evidence only | Names repeat, get masked, differ from the order name, or the payment comes from a family member's app |
 | Payer VPA | ⚠️ Not alone | Customers rarely know it by heart; banks do not always include it |
 | Customer's success screen | ❌ Never | A screenshot proves nothing — only a real credit in the merchant's bank counts |
@@ -392,7 +421,7 @@ RULES:
 | ⚡ Fast-lane confirmation | **< 3–5 s** | Business-app notification capture |
 | 📩 Fallback confirmation | **< 60 s** | Bank SMS parser |
 | 🔋 Battery impact | **< 1.5% / day** | Event-driven design, quiet-hour throttling |
-| 🛒 Concurrent orders | **1,000s per merchant** | Indexed paise-fingerprint allocation + race-safe claim |
+| 🛒 Same-price burst | **301 orders per price point inside the safety window** | 301 unique paise amounts (₹0.00–₹3.00), cheapest band first, automatic widening under load; clean `503` beyond the cap |
 
 ---
 
@@ -415,7 +444,9 @@ RULES:
 - [x] README, license, contributing guide, bank-format documentation
 
 **Phase 1 — The checkout core**
-- [x] **Paisa-fingerprint allocator** — every open order gets its own 0–99 paise suffix (e.g. ₹998.26), unique per merchant
+- [x] **Traffic-aware paisa-fingerprint allocator** — 301 unique amounts per price point (₹0.00–₹3.00), cheapest band first, widening automatically under load, unique per merchant inside the safety window
+- [x] **Atomic allocation + order creation** — one database transaction, partial unique index on `(merchantId, amountPaise)` for `PENDING` orders, retry on conflict (SQLite dev writes are serialised)
+- [x] **Expired-order sweeper** — closes stale checkout links after the late-match window while keeping their amount retired, so capacity cannot leak
 - [x] **`POST /api/orders`** — merchant API-key auth, human refs (`PS-000421`), `upi://` intent URL, order expiry
 - [x] **`GET /api/orders/:ref`** — public status + verified evidence (UTR, source, paid time)
 - [x] **`GET /api/orders/:ref/events`** — live SSE status stream
@@ -425,15 +456,15 @@ RULES:
 - [x] **Matching engine v1** — unique-amount match + match window + strict mode, race-safe one-time claim, late-match ledger
 - [x] **`order.paid` webhook** — HMAC-SHA256 signed, delivered to the merchant's backend
 - [x] **Admin bootstrap** — create merchant + pair a phone (merchant dashboard UI arrives in Phase 2)
-- [x] **31 automated tests** — money math, allocator, parser, UPI builder, matcher
-- [x] **End-to-end verified** — create order → ingest bank SMS → order PAID with UTR → replay deduped
+- [x] **43 automated tests** — money math, fingerprint bands, allocator, sweeper, parser, UPI builder, matcher
+- [x] **Live capacity verified** — 301 unique amounts at one price, 302nd returns `503` with `Retry-After`, 20 parallel creates, duplicate credit stays unmatched
 
 ### Next
 
-**Phase 1.1 — Concurrency hardening**
-- [ ] Wrap suffix allocation + order creation in one database transaction
-- [ ] Partial unique index on `(merchantId, amountPaise)` for `PENDING` orders, with retry-on-conflict
-- [ ] Load test: 100 simultaneous orders at the same price → 100 distinct amounts, zero collisions
+**Phase 1.1 — Production concurrency & capacity**
+- [ ] PostgreSQL load test: simultaneous same-price orders against the production database
+- [ ] Capacity alert when a price point crosses ~80% of its 301 amounts
+- [ ] Burst handling for sellers who regularly hit the cap — multiple receiving VPAs or queueing
 
 **Phase 1.5 — Go live for ₹0**
 - [ ] Deploy frontend to Vercel, backend to Render, database to Neon (free tiers)
@@ -552,14 +583,18 @@ curl -X POST http://localhost:4000/api/orders \
   -d '{"amount":998,"note":"2 × Graphic Tee"}'
 # → {
 #     "order": {
-#       "ref":         "PS-000421",
-#       "amount":      "998.26",          ← ₹998 + unique 0–99 paise fingerprint
-#       "intentUrl":   "upi://pay?pa=yourstore@okaxis&am=998.26&cu=INR…",
-#       "statusUrl":   "http://localhost:5173/s/PS-000421"
+#       "ref":             "PS-000421",
+#       "amount":          "998.26",       ← ₹998 + 26 paise fingerprint
+#       "baseAmount":      998,
+#       "baseAmountPaise": 99800,
+#       "extraPaise":      26,             ← 0–300; part of the payment, not a fee
+#       "intentUrl":       "upi://pay?pa=yourstore@okaxis&am=998.26&cu=INR…",
+#       "statusUrl":       "http://localhost:5173/s/PS-000421"
 #     }
 #   }
-#   The paise suffix is unique among your open orders: it identifies the order
-#   in the bank credit and is part of the payment — never a PaidSure fee.
+#   The fingerprint is unique among orders inside the safety window. It
+#   identifies the order in the bank credit and is automatically widened
+#   (up to ₹3.00) when many orders share the same price.
 ```
 Redirect the customer to `intentUrl` (or render `statusUrl` as a QR). When
 they return from the UPI app, your backend reads the status endpoint or
@@ -648,7 +683,25 @@ Bank SMS and bank email keep working without notification access. Capture Health
 
 <br>
 
-No. The customer's screen is never used as a signal. Only an alert received on the **merchant's own paired phone** can confirm an order, and a credit can only confirm the order with the **same unique amount**. Every open order carries its own 0–99 paise fingerprint, so a ₹998.26 credit can only belong to the order created for ₹998.26 — a screenshot or a ₹1 transfer has nothing to match.
+No. The customer's screen is never used as a signal. Only an alert received on the **merchant's own paired phone** can confirm an order, and a credit can only confirm the order with the **same unique amount**. Every order carries its own ₹0.00–₹3.00 paise fingerprint (cheapest band first, widened automatically under load), so a ₹998.26 credit can only belong to the order created for ₹998.26 — a screenshot or a ₹1 transfer has nothing to match.
+
+</details>
+
+<details>
+<summary><b>Why does the customer pay a few extra paise?</b></summary>
+
+<br>
+
+The paise amount is the order's identifier in the bank credit — the only matching key. It is **not a fee**: 100% of it reaches the seller. PaidSure uses ₹0.00–₹0.99 in normal traffic and widens the range up to ₹3.00 only when many orders share the same price. The checkout always shows the final amount before the customer pays.
+
+</details>
+
+<details>
+<summary><b>What if more than 301 people order the same price at once?</b></summary>
+
+<br>
+
+The order API returns `503 fingerprint_space_exhausted` with `Retry-After: 60`. No duplicate amount is issued and no wrong order can be confirmed; the seller's site can ask the customer to retry in a minute. Capacity alerts and burst handling (multiple receiving VPAs or queueing) are on the roadmap, not shipped yet.
 
 </details>
 
