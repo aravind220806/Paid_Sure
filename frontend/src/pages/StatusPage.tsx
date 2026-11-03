@@ -41,6 +41,7 @@ export default function StatusPage({ refId }: { refId: string }) {
   const [order, setOrder] = useState<OrderView | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [qr, setQr] = useState<string | null>(null);
+  const extraPaise = order ? order.amountPaise % 100 : 0;
 
   // Initial load
   useEffect(() => {
@@ -174,6 +175,11 @@ export default function StatusPage({ refId }: { refId: string }) {
             <div style={{ color: "var(--text-3)", fontSize: 14 }}>
               to <span style={{ fontWeight: 600 }}>{order?.payeeName}</span>
             </div>
+            {extraPaise > 0 && (
+              <div style={{ color: "var(--text-3)", fontSize: 12, marginTop: 2 }}>
+                Includes {formatINR(extraPaise)} to identify your order. It goes to the seller — not a fee.
+              </div>
+            )}
             <div className="num" style={{ color: "var(--text-3)", fontSize: 13 }}>
               Ref {order?.ref}
             </div>

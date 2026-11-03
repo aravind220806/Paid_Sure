@@ -32,6 +32,7 @@ PaidSure is a **UPI payment gateway made for small online product sellers**: you
 | 🌐 **Integration** | Paste one link/button, or call one REST API. Works with any site builder, WordPress, or custom code — any stack. |
 | 🏦 **Money** | It's your bank account, not ours. Nothing is held back for days: the customer's payment *is* your money, immediately. |
 | 🔐 **Trust** | A sale is finalized only after the credit is verified from payment evidence (UTR, amount, channel) — never from the customer's screen. |
+| 🔢 **Matching** | Every open order gets its own paise fingerprint (₹998.26), so simultaneous payments can never be confused. The ≤₹0.99 identifier is part of the payment, not a fee. |
 | 🛒 **Product-aware** | *(Phase 2)* Sync your product list once and every cart fills with the correct names and rates automatically — no manual amounts again. |
 | 🇮🇳 **Built for** | Small online product sellers in India — the audience the big gateways price out. |
 
@@ -88,7 +89,7 @@ PaidSure is a **UPI payment gateway made for small online product sellers**: you
 | 📝 Signing up | **Your UPI ID is the merchant account. No PaidSure-owned account exists** |
 | 🌐 Integration | **One pasted link/button, or one API call — your choice** |
 | 🎭 Fake screenshots | **Worthless. Only verified credit evidence on the paired phone finalizes an order** |
-| 🔢 Amounts | **Exact price by default — the customer pays ₹998.00, not ₹998.37. Optional paisa-fingerprint mode for deterministic matching** |
+| 🔢 Amounts | **Every open order gets its own paise fingerprint (₹998.26) — no two open orders can share an amount, so every credit maps to exactly one order** |
 | 🧾 Prices in the cart | *(Phase 2)* **Synced from your catalog — rates are computed server-side, customers can't edit them** |
 | 📜 Open source | **MIT. Self-host the whole gateway on your own machine for free, forever** |
 
@@ -168,15 +169,15 @@ Raw SMS/push, UTR, VPA and channel stored per payment. Unmatched credits are nev
 
 Every order passes through four steps:
 
-1. **Your website creates the order.** One call to `POST /api/orders` returns the amount (**exactly ₹998.00** by default; opt-in fingerprint mode may add ≤ ₹0.99), a `upi://` redirect link, a QR and a hosted live-status page. *(No code? Paste a checkout link instead.)*
+1. **Your website creates the order.** One call to `POST /api/orders` returns the amount with a unique paise fingerprint (₹998.**26**), a `upi://` redirect link, a QR and a hosted live-status page. *(No code? Paste a checkout link instead.)*
 2. **The customer pays.** Your site redirects them — or shows the QR — and any UPI app (GPay, PhonePe, Paytm) opens pre-filled with the amount. They return to your site.
 3. **The payment self-reports.** Your paired capture phone collects the credit evidence: business-app push, bank SMS or bank email. *(The ~1–3 s fast lane needs a UPI business app with its payment notifications ON — see [What you need](#-what-you-need). SMS/email keep working without it.)*
-4. **PaidSure verifies and you finalize.** An exact-amount match marks the order PAID with evidence stored (UTR, VPA, channel); your backend reads the status (REST) or the webhook/SSE and ships the product.
+4. **PaidSure verifies and you finalize.** A unique-amount match marks the order PAID with evidence stored (UTR, VPA, channel); your backend reads the status (REST) or the webhook/SSE and ships the product.
 
 ```mermaid
 flowchart LR
     subgraph Customer
-        A[🛒 Your online store<br/>amount ₹998.00] --> B[🔁 UPI redirect / QR]
+        A[🛒 Your online store<br/>amount ₹998.26 · unique paise] --> B[🔁 UPI redirect / QR]
         B --> C[GPay · PhonePe · Paytm]
     end
 
@@ -189,7 +190,7 @@ flowchart LR
 
     subgraph Backend
         E & F & G --> H{{Parser + dedupe}}
-        H --> I[Matching engine<br/>exact amount in window]
+        H --> I[Matching engine<br/>unique paise in window]
         I --> J[✅ Confirmed<br/>evidence · UTR · channel]
         J --> K[SSE → live status page<br/>finalize · webhook · dashboard]
     end
@@ -208,45 +209,89 @@ flowchart LR
 
 ## 🧩 The Hard Question: Which Payment Belongs to Which Order?
 
-A busy shop receives several payments at the same time — and the bank never says which order they belong to:
+Imagine three customers buying the same ₹998 t-shirt at the same moment. Three ₹998 credits land in the merchant's bank. The bank alert says only *"₹998 credited"* — never *"for order PS-000421"*.
 
-> **The problem.** Bank evidence arrives as *"₹998 credited"* — never *"for order PS-000421"*. If three customers each pay ₹998 in the same minute, how does the gateway know which credit confirms which order? And charging customers extra paise just to tell orders apart is not acceptable.
+> **The problem.** If every order costs the same, there is no way to tell which bank credit belongs to which customer. Names repeat, screenshots can be faked, and bank messages say different things.
 
-### 🧠 Our solution — attribute by evidence, in priority order
+PaidSure solves this with a **paisa fingerprint**: a tiny, private amount added to every order.
 
-A credit may only confirm an order with the **exact same amount** (money safety: a ₹1 transfer can never unlock a ₹998 order). When several open orders share that amount, the matcher scores the signals:
+### 💡 Our solution: every order gets its own private paise
 
-| # | Signal | Where it comes from | Strength |
-|---|---|---|---|
-| 1 | **Order ref inside the payment note** | PaidSure puts `PS-000421` in the UPI note (`tn`); business-app pushes often display it | 🟢 Decisive |
-| 2 | **Payer VPA** | Optional checkout field ("Which UPI ID will you pay from?") + push/email evidence | 🟢 Decisive when present |
-| 3 | **Payer name** | Business-app pushes and bank emails often include it — fuzzy-matched against the order's customer name | 🟡 Strong preference — never used alone |
-| 4 | **UTR entered by the customer** | "Payment not confirmed? Paste your UTR" fallback on the status page | 🟢 Decisive |
-| 5 | **Newest-order tie-break** | The order created closest before the credit | ⚪ Last resort — flagged for review |
+Each order gets a unique amount, using **0–99 paise** added to the product price:
 
-- **One clear winner** → order marked PAID with evidence (UTR, payer hint, channel).
-- **Still ambiguous** → the customer sees **"Payment received — confirming"** and the merchant confirms with one tap in the dashboard. Never a silent guess.
-- **No amount match** → the credit lands in the **unmatched ledger** — never lost; late payments still match within **12 hours**; extra/duplicate credits stay visible for refund or manual assignment.
+| Order | Product price | Amount the customer pays | What the bank alert says | Which order it confirms |
+|---|---|---|---|---|
+| `PS-000421` | ₹998 | **₹998.26** | "Rs 998.26 credited…" | ✅ only `PS-000421` |
+| `PS-000422` | ₹998 | **₹998.71** | "Rs 998.71 credited…" | ✅ only `PS-000422` |
+| `PS-000423` | ₹998 | **₹998.08** | "Rs 998.08 credited…" | ✅ only `PS-000423` |
 
-```mermaid
-flowchart TD
-    A[🏦 Bank evidence: ₹998.00 credited] --> B{Open orders with<br/>the exact same amount?}
-    B -->|none| L[📒 Unmatched ledger<br/>late-match window still applies]
-    B -->|one| P[✅ PAID + evidence<br/>UTR · payer hint · channel]
-    B -->|several| S{Strong signal?<br/>ref in note · payer VPA<br/>name match · UTR}
-    S -->|yes| P
-    S -->|no| R[⏳ Received — confirming<br/>one-tap merchant review]
+Two **open** orders at the same shop can never share an amount. So when a credit arrives, the matcher asks one simple question:
+
+> **"Which open order has exactly this amount in paise?"**
+
+If exactly one does → that order becomes **PAID**, with the bank evidence attached. No guessing, no name matching, no screenshots.
+
+> [!IMPORTANT]
+> **The extra paise is not a fee.** It is part of the payment and lands in the seller's account with the rest. Think of it as the order number written on the envelope: ₹998.26 is "the ₹998 order with tag 26". The hosted checkout always shows the final amount before the customer pays, so nobody is surprised.
+
+**For non-technical sellers:** the customer pays ₹998.26 instead of ₹998.00. The ₹0.26 identifies the order and reaches your bank account — PaidSure never keeps it.
+
+### 🧮 How the fingerprint is chosen (for developers)
+
+For every new order:
+
+1. Convert the product total to paise: ₹998 → `99800`.
+2. Find all **PENDING** orders for this merchant with the same base amount.
+3. Pick a suffix from `0…99` that no open order is using (for example `26`).
+4. Store `amountPaise = 99826` and build the UPI link with `am=998.26`.
+5. If all 100 suffixes are taken, move the base up by ₹1 (₹999.xx) and repeat — up to 3 hops. If even that is full, reject the order with a clear error instead of risking a duplicate amount.
+
+```
+₹998.00 base
+   ├── 998.00  ← order 1
+   ├── 998.01  ← order 2
+   ├── ...
+   ├── 998.99  ← order 100
+   └── all 100 taken? → ₹999.00…₹999.99 (the next 100 suffixes)
 ```
 
-### 🎛️ Two amount modes (merchant's choice)
+When a credit arrives, the matcher parses the amount from the bank evidence and looks for **one** PENDING order with that exact `amountPaise`, created within the match window. The claim is a single atomic update, so if two messages arrive together, only one can win.
 
-| Mode | Customer pays | Matching | Best for |
-|---|---|---|---|
-| **Exact price** *(default)* | exactly ₹998.00 — **no extra, ever** | the signal engine above | every seller — the fair default |
-| **Paisa fingerprint** *(opt-in)* | ₹998.00 + a unique suffix (e.g. ₹998.26) | **100% deterministic** — no two open orders share an amount | high-volume shops with many identical-price orders that prefer zero ambiguity |
+**Concurrency hardening (next build item):** allocation and order creation currently happen in two steps. Production will wrap them in one transaction, add a partial unique index on `(merchantId, amountPaise)` for `PENDING` orders, and retry on conflict. That makes "no two open orders share an amount" a database guarantee, not just an allocator promise.
 
-> [!NOTE]
-> The customer is never *forced* to pay extra. Exact price is the default; the paisa fingerprint is a deliberate opt-in for shops that want mathematical certainty and don't mind the ≤ ₹0.99 identifier amount.
+### 🧾 What happens in the real world
+
+| Situation | What PaidSure does |
+|---|---|
+| 50 people pay at the same second | 50 different amounts → 50 messages → each matches exactly one order |
+| Two different shops use ₹998.26 | No conflict — matching is scoped to the merchant whose phone captured the credit |
+| The same bank SMS arrives twice | Dedupe fingerprint → the second copy is ignored; the order stays paid once |
+| A customer pays twice for one order | The first credit confirms it; the second matches no open order → **unmatched ledger**, visible for refund |
+| A customer ignores the link and pays ₹998.00 | No open order has that exact amount → **unmatched ledger**; the merchant assigns or refunds it manually |
+| A payment arrives hours late | The late-match window still links it for **12 hours** |
+| 100 orders at ₹998 are open at once | All 100 suffixes are used; the 101st moves to ₹999.xx automatically |
+
+### 🤔 Why not match by payer name or a screenshot?
+
+| Signal | Can it confirm a payment? | Why |
+|---|---|---|
+| **Paisa fingerprint** | ✅ Yes | Chosen by us, unique among open orders, and present in every bank credit |
+| Payer name | ⚠️ No, evidence only | Names repeat, get masked, differ from the order name, or the payment comes from a family member's app |
+| Payer VPA | ⚠️ Not alone | Customers rarely know it by heart; banks do not always include it |
+| Customer's success screen | ❌ Never | A screenshot proves nothing — only a real credit in the merchant's bank counts |
+| UTR | ✅ As evidence | Perfect for audit and support, but the customer does not have it before paying |
+
+PaidSure still **stores** payer hints, VPA, UTR and the raw message text as evidence — they help with support, refunds and disputes. They are never the confirmation key.
+
+### 🧑‍💼 What the customer sees
+
+```
+Pay ₹998.26
+Includes ₹0.26 to identify your order.
+It goes to the seller — not a fee.
+```
+
+One clear line, and the amount is pre-filled in GPay / PhonePe / Paytm. The customer taps once and pays; the status page flips to **PAID** on its own.
 
 ---
 
@@ -347,7 +392,7 @@ RULES:
 | ⚡ Fast-lane confirmation | **< 3–5 s** | Business-app notification capture |
 | 📩 Fallback confirmation | **< 60 s** | Bank SMS parser |
 | 🔋 Battery impact | **< 1.5% / day** | Event-driven design, quiet-hour throttling |
-| 🛒 Concurrent orders | **1,000s per merchant** | Indexed exact-amount lookup + windowed attribution engine |
+| 🛒 Concurrent orders | **1,000s per merchant** | Indexed paise-fingerprint allocation + race-safe claim |
 
 ---
 
@@ -370,14 +415,14 @@ RULES:
 - [x] README, license, contributing guide, bank-format documentation
 
 **Phase 1 — The checkout core**
-- [x] **Transactional unique-amount allocator** — opt-in paisa-fingerprint mode: every open order gets its own suffix (₹998.26), unique per merchant
+- [x] **Paisa-fingerprint allocator** — every open order gets its own 0–99 paise suffix (e.g. ₹998.26), unique per merchant
 - [x] **`POST /api/orders`** — merchant API-key auth, human refs (`PS-000421`), `upi://` intent URL, order expiry
 - [x] **`GET /api/orders/:ref`** — public status + verified evidence (UTR, source, paid time)
 - [x] **`GET /api/orders/:ref/events`** — live SSE status stream
 - [x] **Hosted checkout / status page** at `/s/:ref` — amount, QR, "Open any UPI app", auto-flips to PAID with proof
 - [x] **`POST /api/ingest`** — the one doorway for paired phones: hashed device tokens, per-message dedupe
 - [x] **Parser v1** — HDFC, SBI, ICICI, Axis SMS + GPay / PhonePe / Paytm business-app pushes + generic per-lane fallbacks
-- [x] **Matching engine v1** — exact amount + match window + strict mode, race-safe one-time claim, late-match ledger
+- [x] **Matching engine v1** — unique-amount match + match window + strict mode, race-safe one-time claim, late-match ledger
 - [x] **`order.paid` webhook** — HMAC-SHA256 signed, delivered to the merchant's backend
 - [x] **Admin bootstrap** — create merchant + pair a phone (merchant dashboard UI arrives in Phase 2)
 - [x] **31 automated tests** — money math, allocator, parser, UPI builder, matcher
@@ -385,12 +430,10 @@ RULES:
 
 ### Next
 
-**Phase 1.1 — Exact-price attribution engine**
-- [ ] Exact-amount mode by default (customer pays ₹998.00, zero extra paise)
-- [ ] Signal-ranked attribution: order ref in note → payer VPA → payer name → UTR fallback → newest-first
-- [ ] `REVIEW` state + one-tap merchant confirm for genuine ambiguity
-- [ ] Parser v2: order-ref, payer name/VPA extraction per bank format
-- [ ] Tests for duplicate amounts, name priority, review path, mode switching
+**Phase 1.1 — Concurrency hardening**
+- [ ] Wrap suffix allocation + order creation in one database transaction
+- [ ] Partial unique index on `(merchantId, amountPaise)` for `PENDING` orders, with retry-on-conflict
+- [ ] Load test: 100 simultaneous orders at the same price → 100 distinct amounts, zero collisions
 
 **Phase 1.5 — Go live for ₹0**
 - [ ] Deploy frontend to Vercel, backend to Render, database to Neon (free tiers)
@@ -413,7 +456,7 @@ timeline
     section Phase 0 · Foundation ✅
         Scaffold + CI                : Security audit (0 CVEs)
     section Phase 1 · Checkout Core ✅
-        Orders API + amount modes    : Hosted checkout + SSE status
+        Orders API + paise fingerprints : Hosted checkout + SSE status
         Parser v1 + matcher          : Signed webhook + ₹1 E2E proof
     section Phase 1.5 · Go Live for ₹0 🚀
         Free-tier deployment         : First real online stores
@@ -510,13 +553,13 @@ curl -X POST http://localhost:4000/api/orders \
 # → {
 #     "order": {
 #       "ref":         "PS-000421",
-#       "amount":      "998.00",          ← exact price by default (no extra paise)
-#       "intentUrl":   "upi://pay?pa=yourstore@okaxis&am=998.00&cu=INR…",
+#       "amount":      "998.26",          ← ₹998 + unique 0–99 paise fingerprint
+#       "intentUrl":   "upi://pay?pa=yourstore@okaxis&am=998.26&cu=INR…",
 #       "statusUrl":   "http://localhost:5173/s/PS-000421"
 #     }
 #   }
-#   (Opt-in paisa-fingerprint mode: "amount": "998.26" — a ≤₹0.99 identifier
-#    that makes attribution deterministic. Never forced on the customer.)
+#   The paise suffix is unique among your open orders: it identifies the order
+#   in the bank credit and is part of the payment — never a PaidSure fee.
 ```
 Redirect the customer to `intentUrl` (or render `statusUrl` as a QR). When
 they return from the UPI app, your backend reads the status endpoint or
@@ -605,7 +648,7 @@ Bank SMS and bank email keep working without notification access. Capture Health
 
 <br>
 
-No. The customer's screen is never used as a signal. Only an alert received on the **merchant's own paired phone** can confirm an order, and a credit can only confirm an order with the **same exact amount**. Attribution between identical amounts uses ranked evidence (order ref in the note, payer VPA/name, UTR) and any genuine ambiguity is confirmed by the merchant — never silently guessed. Fake receipts and reused screenshots have nothing to match.
+No. The customer's screen is never used as a signal. Only an alert received on the **merchant's own paired phone** can confirm an order, and a credit can only confirm the order with the **same unique amount**. Every open order carries its own 0–99 paise fingerprint, so a ₹998.26 credit can only belong to the order created for ₹998.26 — a screenshot or a ₹1 transfer has nothing to match.
 
 </details>
 
