@@ -20,6 +20,11 @@ const schema = z.object({
     .string()
     .default("")
     .describe("Comma-separated CORS origins. Empty = deny all cross-origin."),
+  PUBLIC_APP_URL: z
+    .string()
+    .url()
+    .default("http://localhost:5173")
+    .describe("Base URL of the frontend — used to build hosted status links."),
 });
 
 export type AppConfig = z.infer<typeof schema>;

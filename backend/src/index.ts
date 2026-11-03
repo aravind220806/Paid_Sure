@@ -2,6 +2,9 @@ import express, { type Express, type NextFunction, type Request, type Response }
 import cors from "cors";
 import { allowedOrigins, config } from "./config.js";
 import { healthRouter } from "./routes/health.js";
+import { ordersRouter } from "./routes/orders.js";
+import { ingestRouter } from "./routes/ingest.js";
+import { adminRouter } from "./routes/admin.js";
 
 const app: Express = express();
 
@@ -31,6 +34,9 @@ app.use(
 app.use(express.json({ limit: "256kb" }));
 
 app.use(healthRouter);
+app.use("/api/orders", ordersRouter);
+app.use("/api/ingest", ingestRouter);
+app.use("/api/admin", adminRouter);
 
 // Unknown routes → clean JSON 404
 app.use((_req: Request, res: Response) => {

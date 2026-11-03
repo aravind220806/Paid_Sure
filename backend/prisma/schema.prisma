@@ -26,6 +26,9 @@ model Merchant {
   softAlertsOn     Boolean    @default(true) // "fast lane silent" nudges
   lateMatchMinutes Int        @default(720) // 12h late-match window in minutes
   confirmWindowMin Int        @default(15) // normal match window for a pending order
+  apiKeyHash       String?    @unique // `psm_…` key for POST /api/orders; hashed, shown once
+  webhookUrl       String? // merchant backend URL that receives order.paid
+  webhookSecret    String? // HMAC secret for x-paidsure-signature
   createdAt        DateTime   @default(now())
   updatedAt        DateTime   @updatedAt
 

@@ -25,7 +25,7 @@ to the PaidSure backend:
 | Permission | Purpose |
 |---|---|
 | `READ_SMS`, `RECEIVE_SMS` | Bank credit SMS capture — the authoritative confirmation lane |
-| Notification access ( aranee `NOTIFICATION_LISTENER` role) | Business-app "money received" pushes — the instant fast lane |
+| Notification access (`NOTIFICATION_LISTENER` role) | Business-app "money received" pushes — the instant fast lane |
 | `SCHEDULE_EXACT_ALARM` | **Not used** — battery policy forbids exact alarms |
 | Battery-optimization exemption | Only for this app's process; keeps capture alive on aggressive OEMs |
 
@@ -40,12 +40,35 @@ android/app/src/main/java/com/paidsure/alerts/
 └── ui/            # status card, wizard, detailed status sheet
 ```
 
-## Backend contract (Phase 1 implements these endpoints)
+## Backend contract (Phase 1 — implemented)
 
-- `POST /api/ingest/sms` — `{ token, messages: [{ sender, body, receivedAt }] }`
-- `POST /api/ingest/push` — `{ token, notifications: [{ package, title, text, at }] }`
-- `POST /api/device/heartbeat` — `{ token, batteryPct, listenerOn, smsOn, queued }`
-- `POST /api/device/pair` — dashboard-issued pairing code → device token (hashed
+One doorway, bearer-token auth, batched messages (max 20 per call):
+
+```
+POST /api/ingest
+Authorization: Bearer psd_…                  # paired device token (stored hashed)
+──────────────────────────────────────────────────────────────────────────────
+{
+  "batteryPct": 88,                          # optional heartbeat fields
+  "listenerOn": true,
+  "smsOn": true,
+  "messages": [
+    { "source": "SMS",  "sender": "HDFCBK", "body": "Rs 998.26 credited …", "receivedAt": "2026-11-02T12:00:00Z" },
+    { "source": "PUSH", "sender": "gpaybusiness", "body": "You received ₹998.26 …" }
+  ]
+}
+→ { "ok": true, "results": [{ "index": 0, "outcome": "matched", "orderRef": "PS-000421" }] }
+```
+
+Outcomes: `matched` · `duplicate` · `ignored` · `unmatched` · `review`
+(strict-mode push). The response also carries `matchedOrderRef` so the app can
+speak/announce the confirmation immediately.
+
+Pairing (Phase 1 admin bootstrap, dashboard QR in Phase 2):
+
+```
+POST /api/admin/merchants/:slug/devices   → { "pairToken": "psd_…" }  (shown once)
+```
 
 All over TLS; tokens stored server-side hashed; raw message text stored as
 evidence with consent.

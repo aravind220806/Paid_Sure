@@ -1,4 +1,12 @@
+import StatusPage from "./pages/StatusPage";
+
 export default function App() {
+  // Hosted checkout/status route: /s/:ref — no router dependency needed.
+  const statusRef = window.location.pathname.match(/^\/s\/([A-Za-z0-9-]+)/)?.[1];
+  if (statusRef) {
+    return <StatusPage refId={statusRef} />;
+  }
+
   return (
     <>
       {/* Sticky nav — one of the few places glass is allowed (layer overlap) */}
