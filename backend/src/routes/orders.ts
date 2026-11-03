@@ -258,7 +258,11 @@ ordersRouter.get("/:ref", statusLimiter, asyncRoute(async (req, res) => {
       ).toISOString(),
       confirmedSource: order.confirmedSource,
       paidAt: order.paidAt?.toISOString() ?? null,
-      utr: order.transactions[0]?.utr ?? null,
+      utr: (() => {
+        const raw = order.transactions[0]?.utr;
+        if (!raw) return null;
+        return raw.length > 4 ? `••••••${raw.slice(-4)}` : raw;
+      })(),
     },
   });
 }));

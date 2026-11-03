@@ -43,6 +43,7 @@ export interface ProcessedMessage {
 }
 
 const MAX_FUTURE_SKEW_MS = 5 * 60_000;
+const MAX_PAST_SKEW_MS = 30 * 60_000;
 
 function sha256(input: string): string {
   return createHash("sha256").update(input).digest("hex");
@@ -51,13 +52,14 @@ function sha256(input: string): string {
 /**
  * Device clocks drift and phones go offline; accept a capture time up to the
  * late-match window old, but never a future time (that would let a device
- * pre-date an order). Returns null when the timestamp is nonsense.
+ * pre-date an order) nor a time older than 30 minutes. Returns null when the timestamp is nonsense.
  */
 function eventTime(raw: string | undefined, now: Date): Date | null {
   if (!raw) return now;
   const parsed = new Date(raw);
   if (Number.isNaN(parsed.getTime())) return null;
   if (parsed.getTime() > now.getTime() + MAX_FUTURE_SKEW_MS) return null;
+  if (parsed.getTime() < now.getTime() - MAX_PAST_SKEW_MS) return null;
   return parsed.getTime() > now.getTime() ? now : parsed;
 }
 
@@ -148,11 +150,32 @@ export async function processIngestMessage(
     return { outcome: "review", ruleKey: parsed.ruleKey };
   }
 
+  // One payment UTR may only ever confirm ONE order. Replaying an identical
+  // UTR across orders or lanes is blocked.
+  if (parsed.utr) {
+    const alreadyUsed = await prisma.parsedTransaction.findFirst({
+      where: {
+        merchantId,
+        utr: parsed.utr,
+        status: "MATCHED",
+      },
+    });
+    if (alreadyUsed) {
+      await prisma.parsedTransaction.update({
+        where: { id: parsedTxn.id },
+        data: { status: "DUPLICATE" },
+      });
+      await prisma.paymentAlert.update({ where: { id: alert.id }, data: { processed: true } });
+      return { outcome: "duplicate", ruleKey: parsed.ruleKey };
+    }
+  }
+
   const order = await findOpenOrderFor(
     merchantId,
     parsed.amountPaise,
     capturedAt,
     merchant.lateMatchMinutes,
+    now,
   );
   if (!order) return { outcome: "unmatched", ruleKey: parsed.ruleKey };
 
@@ -193,6 +216,7 @@ async function findOpenOrderFor(
   amountPaise: number,
   at: Date,
   lateMatchMinutes: number,
+  now = new Date(),
 ) {
   const candidates = await prisma.order.findMany({
     where: { merchantId, status: "PENDING", amountPaise },
@@ -202,7 +226,10 @@ async function findOpenOrderFor(
   const windowMs = lateMatchMinutes * 60_000;
   return (
     candidates.find(
-      (o) => at >= o.createdAt && at.getTime() <= o.createdAt.getTime() + windowMs,
+      (o) =>
+        now.getTime() <= o.createdAt.getTime() + windowMs &&
+        at >= o.createdAt &&
+        at.getTime() <= o.createdAt.getTime() + windowMs,
     ) ?? null
   );
 }

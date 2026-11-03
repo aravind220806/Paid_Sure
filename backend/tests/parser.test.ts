@@ -103,6 +103,36 @@ describe("parser v2 — business-app pushes (first preference)", () => {
     const p = push("com.phonepe.app", "You sent Rs 250.00 to shopkeeper@upi on PhonePe.");
     expect(p?.isCredit ?? false).toBe(false);
   });
+
+  it("rejects payment collect requests (money requests)", () => {
+    expect(
+      push(
+        "com.google.android.apps.nbu.paisa.user",
+        "Payment request received for ₹499.50 from attacker@oksbi",
+      ),
+    ).toBeNull();
+    expect(
+      push(
+        "com.phonepe.app",
+        "Rahul requested ₹250.00 from you on PhonePe. Tap to pay.",
+      ),
+    ).toBeNull();
+  });
+
+  it("rejects in-app P2P chat messages", () => {
+    expect(
+      push(
+        "com.google.android.apps.nbu.paisa.user",
+        "Rahul: Payment received ₹499.50 UTR 999888777666",
+      ),
+    ).toBeNull();
+    expect(
+      push(
+        "com.google.android.apps.nbu.paisa.user",
+        "Alice sent you a message: ₹499 received from my side",
+      ),
+    ).toBeNull();
+  });
 });
 
 describe("parser v2 — unknown senders are evidence only", () => {
@@ -125,6 +155,14 @@ describe("parser v2 — unknown senders are evidence only", () => {
     const p = sms("9876543210", "Rs 499.69 credited to your account. UTR 123456789012.");
     expect(p?.isCredit).toBe(true);
     expect(p?.verified).toBe(false);
+  });
+
+  it("does not trust loose telecom promo headers as verified banks", () => {
+    const promoJio = sms("VM-JIOMBL", "Welcome! Rs 499.50 credited into your account.");
+    expect(promoJio?.verified).toBe(false);
+
+    const bankJio = sms("VM-JIOBNK", "Rs 499.50 credited to your Jio Payments Bank a/c.");
+    expect(bankJio?.verified).toBe(true);
   });
 
   it("returns null for anything with no amount", () => {

@@ -70,16 +70,16 @@ const RULES: RuleDef[] = [
   { key: "pnb-credit-v1", lane: "SMS", senders: [/PNB/], confidence: 85 },
   { key: "bob-credit-v1", lane: "SMS", senders: [/BOB|BANKOFBARODA/], confidence: 85 },
   { key: "idfc-credit-v1", lane: "SMS", senders: [/IDFC/], confidence: 85 },
-  { key: "canara-credit-v1", lane: "SMS", senders: [/CANARA/], confidence: 85 },
-  { key: "union-credit-v1", lane: "SMS", senders: [/UNION/], confidence: 85 },
+  { key: "canara-credit-v1", lane: "SMS", senders: [/CANARA|CANBNK/], confidence: 85 },
+  { key: "union-credit-v1", lane: "SMS", senders: [/UNIONB|UBINB/], confidence: 85 },
   { key: "yes-credit-v1", lane: "SMS", senders: [/YESBANK|YESBNK/], confidence: 85 },
-  { key: "indusind-credit-v1", lane: "SMS", senders: [/INDUSIND/], confidence: 85 },
-  { key: "federal-credit-v1", lane: "SMS", senders: [/FEDERAL/], confidence: 85 },
+  { key: "indusind-credit-v1", lane: "SMS", senders: [/INDUSIND|INDBNK/], confidence: 85 },
+  { key: "federal-credit-v1", lane: "SMS", senders: [/FEDBNK|FEDRLB/], confidence: 85 },
   { key: "rbl-credit-v1", lane: "SMS", senders: [/RBL/], confidence: 85 },
   { key: "aubank-credit-v1", lane: "SMS", senders: [/AUBANK/], confidence: 85 },
   { key: "paytm-bank-credit-v1", lane: "SMS", senders: [/PAYTMBANK|PAYTMB/], confidence: 85 },
-  { key: "airtel-bank-credit-v1", lane: "SMS", senders: [/AIRTEL/], confidence: 85 },
-  { key: "jio-bank-credit-v1", lane: "SMS", senders: [/JIO/], confidence: 85 },
+  { key: "airtel-bank-credit-v1", lane: "SMS", senders: [/AIRBNK|ATLPBK|AIRTELBANK/], confidence: 85 },
+  { key: "jio-bank-credit-v1", lane: "SMS", senders: [/JIOBNK|JIOPBK|JIOBANK/], confidence: 85 },
 
   // ── Bank email (known domains only) ──
   {
@@ -98,14 +98,19 @@ const RULES: RuleDef[] = [
 ];
 
 // Formats that mention credit-like words but are NOT a plain P2C credit
-// (failures, reversals, cashback/rewards, balance-only lines, OTPs).
+// (failures, reversals, cashback/rewards, balance-only lines, OTPs, payment requests).
 const BODY_NOISE_RE = [
   /\b(?:failed|declined|pending|revers(?:ed|al)|refund(?:ed)?)\b/i,
   /\bbill\s?pay|\brecharge\b|\bemi\b/i,
   /\bcashback\b|\breward(?:s)?\b|\bpoints?\b|\binterest\b|\bsalary\b/i,
   /\bcredit\s+card\b/i,
   /\b(?:otp|password|pin)\b/i,
+  /\b(?:request(?:ed|ing)?|collect(?:ed|ing)?|mandate|autopay|split\s*bill|reminder)\b/i,
 ];
+
+// Chat / direct messaging notifications in payment apps ("Rahul: Payment received...", "Alice sent you a message: ...")
+const CHAT_OR_MESSAGE_RE =
+  /^(?:[a-zA-Z0-9_\s]{2,30}:\s+|.*?\b(?:sent\s+you\s+a\s+message|sent\s+a\s+message|new\s+message|chat)\b)/i;
 
 /** ₹ / Rs. / Rs / INR + 998 / 1,234 / 998.37 — first match wins. */
 const AMOUNT_RE = /(?:₹|rs\.?|inr)\s*([0-9][0-9,]*(?:\.[0-9]{1,2})?)/gi;
@@ -219,6 +224,7 @@ export function parseAlert(input: AlertInput): ParseOutcome {
   const verified = rule.senders.length > 0;
 
   if (BODY_NOISE_RE.some((re) => re.test(body))) return null;
+  if (lane === "PUSH" && CHAT_OR_MESSAGE_RE.test(body)) return null;
 
   const creditMatches = [...body.matchAll(/\b(?:credited|received)\b/gi)];
   const creditWord = creditMatches.length > 0;

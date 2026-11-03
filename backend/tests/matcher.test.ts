@@ -190,4 +190,43 @@ describe("matcher", () => {
     expect(b.outcome).not.toBe("duplicate");
     await prisma.merchant.delete({ where: { id: other.id } });
   });
+
+  it("blocks UTR reuse across orders (same UTR cannot confirm a second order)", async () => {
+    const order1 = await addOpenOrder(31_111);
+
+    const first = await processIngestMessage(merchantId, deviceId, {
+      source: "SMS",
+      sender: "HDFCBK",
+      body: "Rs 311.11 credited to a/c XX1 by UPI-Ref no 999111222333.",
+    });
+    expect(first.outcome).toBe("matched");
+    expect(first.orderRef).toBe(order1.ref);
+
+    // order1 is now PAID, so order2 can be created with 31_111
+    const order2 = await addOpenOrder(31_111);
+
+    // Replay with identical UTR but slightly different body text so alert hash differs
+    const second = await processIngestMessage(merchantId, deviceId, {
+      source: "SMS",
+      sender: "HDFCBK",
+      body: "Rs 311.11 credited to a/c XX2 (branch 2) by UPI-Ref no 999111222333.",
+    });
+    expect(second.outcome).toBe("duplicate");
+
+    const after2 = await prisma.order.findUnique({ where: { id: order2.id } });
+    expect(after2?.status).toBe("PENDING");
+  });
+
+  it("rejects an alert backdated beyond the past skew limit", async () => {
+    const order = await addOpenOrder(88_888);
+    const result = await processIngestMessage(merchantId, deviceId, {
+      source: "SMS",
+      sender: "HDFCBK",
+      body: "Rs 888.88 credited to a/c XX1 by UPI-Ref no 888888888888.",
+      receivedAt: new Date(Date.now() - 35 * 60_000).toISOString(),
+    });
+    expect(result.outcome).toBe("ignored");
+    const after = await prisma.order.findUnique({ where: { id: order.id } });
+    expect(after?.status).toBe("PENDING");
+  });
 });
