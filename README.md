@@ -16,7 +16,7 @@
 
 <br>
 
-**[🚀 Quick Start](#-quick-start)** &nbsp;·&nbsp; **[🎯 Vision](#-vision--goals)** &nbsp;·&nbsp; **[👥 Who It's For](#-who-its-for)** &nbsp;·&nbsp; **[⚖️ Other Gateways vs PaidSure](#-other-gateways-vs-paidsure)** &nbsp;·&nbsp; **[✨ Features](#-features)** &nbsp;·&nbsp; **[⚙️ How It Works](#️-how-it-works)** &nbsp;·&nbsp; **[🧩 Matching](#-the-hard-question-which-payment-belongs-to-which-order)** &nbsp;·&nbsp; **[☁️ Cloud or Self-Host](#-cloud-or-self-host)** &nbsp;·&nbsp; **[🤖 One-Paste AI Setup](#-one-paste-ai-setup)** &nbsp;·&nbsp; **[✅ Progress](#-roadmap--progress-checklist)** &nbsp;·&nbsp; **[🛠️ Issues & Fixes](#-issues--fixes-across-stages)** &nbsp;·&nbsp; **[❓ FAQ](#-faq)**
+**[🚀 Quick Start](#-quick-start)** &nbsp;·&nbsp; **[🎯 Vision](#-vision--goals)** &nbsp;·&nbsp; **[👥 Who It's For](#-who-its-for)** &nbsp;·&nbsp; **[⚖️ Other Gateways vs PaidSure](#-other-gateways-vs-paidsure)** &nbsp;·&nbsp; **[✨ Features](#-features)** &nbsp;·&nbsp; **[⚙️ How It Works](#️-how-it-works)** &nbsp;·&nbsp; **[🧩 Matching](#-the-hard-question-which-payment-belongs-to-which-order)** &nbsp;·&nbsp; **[☁️ Cloud or Self-Host](#-cloud-or-self-host)** &nbsp;·&nbsp; **[🤖 One-Paste AI Setup](#-one-paste-ai-setup)** &nbsp;·&nbsp; **[✅ Progress](#-roadmap--progress-checklist)** &nbsp;·&nbsp; **[🛡️ Security & Audits](SECURITY.md)** &nbsp;·&nbsp; **[❓ FAQ](#-faq)**
 
 </div>
 
@@ -729,77 +729,10 @@ No. Simple sites use the paste-a-link tier (no code), and self-hosting is a one-
 
 ## 🛠️ Issues & Fixes Across Stages
 
-Every payment gateway faces subtle fraud vectors, race conditions, and infrastructure edge cases. Because PaidSure verifies transactions without charging merchant fees or holding custody of funds, each architectural stage brought unique engineering challenges. Below is a breakdown of the critical issues encountered across stages and how they were resolved in system design—explained conceptually without exposing internal code snippets.
+Every payment gateway faces subtle fraud vectors, race conditions, and infrastructure edge cases. Because PaidSure verifies transactions without charging merchant fees or holding custody of funds, each architectural stage brought unique engineering challenges.
 
-### Phase 0 — Foundation & Money Core
-
-* **Floating-Point Rounding & Currency Drift**
-  * **The Issue:** Using standard floating-point numbers for currency calculations can introduce fractional rounding errors (such as fractions of paise disappearing or accumulating), leading to mismatches between bank alerts and stored totals.
-  * **The Fix:** All currency values are strictly handled as integer paise (hundredths of a rupee) across the database, APIs, and business logic. Rupee decimals are formatted purely at the user interface presentation layer.
-
-* **Database Connection Deadlocks on Concurrent Orders**
-  * **The Issue:** In development and lightweight environments (like SQLite), overlapping order creation requests frequently encountered read-to-write lock upgrades and concurrency contention, leading to database lock errors.
-  * **The Fix:** Implemented an in-process serialized write queue for local file-based testing while leveraging database-native row locking, atomic transactions, and automated retry policies in production PostgreSQL environments.
-
-* **Information Leakage via Unhandled Server Errors**
-  * **The Issue:** Unexpected runtime exceptions initially leaked raw error objects, technical database queries, and stack traces directly to client responses.
-  * **The Fix:** Built a centralized error handler that catches unhandled exceptions, logs full diagnostics securely to internal server logs, and serves clean, generic error codes to external clients.
-
----
-
-### Phase 1 — Core Matching, Ingest & Anti-Cheat Hardening
-
-* **Ingest Telemetry Spoofing & Forged Bank Messages**
-  * **The Issue:** Early architecture treated the ingest endpoint as an authoritative verification source if presented with a paired phone token. Anyone who compromised a token could send hand-written "credit" messages and mark orders as paid without funds arriving.
-  * **The Fix:** Reclassified device ingest from an authoritative proof into untrusted telemetry. Introduced device token expiration, instant revocation, and server-side sender allowlists. The server only auto-confirms alerts from verified financial institutions; unverified or unknown sources are quarantined for manual review.
-
-* **UPI "Payment Request" (Collect Call) Exploitation**
-  * **The Issue:** Instead of paying an order, an attacker could send a UPI Collect Request to the merchant's UPI ID. The merchant's phone received a notification ("Payment request received for ₹..."), which matched generic credit keywords and tricked the system into marking the order paid.
-  * **The Fix:** Overhauled parser rules with debit and request veto logic. Any message containing request or collection terminology is explicitly prevented from triggering a credit confirmation.
-
-* **In-App P2P Chat Injection**
-  * **The Issue:** Popular payment apps (like Google Pay and PhonePe) support in-app user chatting. A buyer could send a chat message saying "Payment received ₹499 UTR...", triggering a notification from the payment app package that mimicked genuine payment confirmations.
-  * **The Fix:** Added strict package, channel, and structure validation so consumer chat messages are never confused with official merchant transaction settlement alerts.
-
-* **Broad SMS Sender Regular Expressions & Promotional SMS Collisions**
-  * **The Issue:** Broad sender matches (such as matching broad names for telecom or banking entities) caused routine promotional texts, cashback messages, or telecom recharge receipts to trigger unintended order confirmations.
-  * **The Fix:** Tightened sender pattern matching to official transactional banking headers (such as DLT-registered bank headers) and expanded noise filters to discard reward points, recharge confirmations, and cashback alerts.
-
-* **Predictable Order Numbers & Public UTR Exposure**
-  * **The Issue:** Public checkout URLs originally used six-digit references that were easily enumerable, and status queries returned bank UTRs and merchant VPAs without authentication.
-  * **The Fix:** Replaced sequential references with unguessable, high-entropy tokens. Stripped sensitive financial identifiers (like UTRs) from public status views, leaving them strictly for authenticated merchant dashboards, and applied non-cacheable headers.
-
-* **Global Alert Deduplication Suppressing Other Merchants**
-  * **The Issue:** Alert deduplication initially hashed only the message body globally. If two merchants legitimately received the exact same generic bank credit text, the second merchant's alert was incorrectly discarded as a duplicate.
-  * **The Fix:** Scoped all alert deduplication hashes strictly to the specific merchant and device record.
-
-* **Past Timestamp Window Bypassing**
-  * **The Issue:** Clients could submit alerts with backdated capture timestamps, bypassing the late-match window and force-matching expired orders.
-  * **The Fix:** Enforced validation using the server's authoritative clock for the active matching window, allowing only bounded clock drift.
-
-* **Webhook SSRF & DNS Rebinding**
-  * **The Issue:** Custom merchant webhook destinations could be pointed to local server ports or internal cloud metadata addresses.
-  * **The Fix:** Enforced HTTPS-only endpoints in production, blocked loopback, private, and link-local IP ranges, disabled HTTP redirects, and bound delivery payloads with event IDs, timestamps, and HMAC signatures.
-
-* **Paise Fingerprint Exhaustion (Denial of Service)**
-  * **The Issue:** With 301 paise slots (₹0.00 to ₹3.00) available per base price, an automated bot could open hundreds of checkouts to lock out all slots, preventing legitimate customers from purchasing.
-  * **The Fix:** Introduced rate limits on order creation, added background sweeper routines that quickly release abandoned slots after checkout countdowns, and enforced concurrency limits on real-time status connections.
-
----
-
-### Phase 2 (Roadmap) — Catalog Sync, Privacy & Mobile Attestation
-
-* **Client-Side Cart Price Tampering (Upcoming)**
-  * **The Challenge:** Simple button integrations on external web pages could expose product prices to manipulation before reaching the server.
-  * **The Solution:** Introducing server-side product catalog synchronization where order creation references server-verified product IDs and fixed rates rather than arbitrary client-provided numbers.
-
-* **Regulatory Data Retention & DPDP Privacy Compliance**
-  * **The Challenge:** Retaining raw bank SMS notifications indefinitely presents privacy and regulatory exposure.
-  * **The Solution:** Implementing automated redaction of sensitive account numbers and personal details in stored alerts, backed by automated retention windows that purge raw text after reconciliation.
-
-* **Mobile OS Background Suspension & Device Trust**
-  * **The Challenge:** Aggressive OEM battery management can freeze background capture services, and rooted devices could tamper with local notification reading.
-  * **The Solution:** Integrating hardware-backed cryptographic signing (Android KeyStore), attestation checks (Play Integrity), and an automated setup wizard to keep capture services alive reliably.
+> [!NOTE]
+> The complete phase-by-phase breakdown of all issues encountered (including ingest spoofing, collect request bypasses, chat injection, UTR handling, and their architectural solutions) is documented in full in **[SECURITY.md](SECURITY.md)** (accessible via the **Security** tab at the top of the repository).
 
 ---
 
